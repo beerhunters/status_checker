@@ -1,41 +1,55 @@
 import os
-import secrets
-from fastapi import FastAPI, Depends, HTTPException, status, Request
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import FastAPI, Request, HTTPException, Form, status
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.exc import SQLAlchemyError
+from fastapi.security import HTTPBasicCredentials
 
-from shared.config import settings
 from shared.logger_setup import logger
 from web.routers import router as admin_router
+from web.auth import AuthDependency, security, verify_basic_auth, create_jwt_token
 
 app = FastAPI(title="Website Monitoring Admin")
-security = HTTPBasic()
 templates = Jinja2Templates(directory="web/templates")
 
 
-# --- Аутентификация ---
-def get_current_user(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(
-        credentials.username, settings.admin_username
+# --- Страница логина ---
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, error: str = None):
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": error},
     )
-    correct_password = secrets.compare_digest(
-        credentials.password, settings.admin_password
-    )
-    if not (correct_username and correct_password):
-        logger.warning(f"Failed login attempt for user: {credentials.username}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    try:
+        credentials = HTTPBasicCredentials(username=username, password=password)
+        # Проверяем учетные данные через Basic Auth
+        verify_basic_auth(credentials=credentials)
+        # Создаем JWT-токен
+        token = create_jwt_token({"sub": username})
+        # Создаем ответ с перенаправлением и устанавливаем cookie
+        response = RedirectResponse(url="/users", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(
+            key="access_token",
+            value=token,
+            httponly=True,
+            max_age=30 * 60,  # 30 минут
+            secure=False,  # Установите True в продакшене с HTTPS
         )
-    logger.debug(f"User {credentials.username} authenticated successfully.")
-    return credentials.username
-
-
-# --- Зависимость (чтобы можно было импортировать в роутеры) ---
-AuthDependency = Depends(get_current_user)
+        return response
+    except HTTPException:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Неверное имя пользователя или пароль"},
+            status_code=status.HTTP_200_OK,
+        )
 
 
 # --- Обработчики ошибок ---
@@ -43,6 +57,9 @@ AuthDependency = Depends(get_current_user)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Обрабатывает ошибки HTTP и показывает HTML страницу."""
     logger.error(f"HTTP Exception: Status={exc.status_code}, Detail={exc.detail}")
+    if exc.status_code == 401:
+        # Перенаправляем на страницу логина при ошибке 401
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         "error.html",
         {"request": request, "status_code": exc.status_code, "detail": exc.detail},
@@ -87,9 +104,6 @@ app.include_router(admin_router)
 @app.on_event("startup")
 async def startup_event():
     logger.info("Admin Panel Starting Up...")
-    # Инициализацию БД лучше делать в боте или отдельном скрипте,
-    # но можно и здесь, если веб-сервер стартует первым.
-    # await init_db()
 
 
 @app.on_event("shutdown")

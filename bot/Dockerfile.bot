@@ -5,6 +5,9 @@ WORKDIR /app
 # Устанавливаем PYTHONPATH
 ENV PYTHONPATH=/app
 
+# Создаем непривилегированного пользователя
+RUN useradd -m -u 1000 appuser
+
 # Устанавливаем зависимости
 COPY bot/requirements.bot.txt .
 RUN pip install --no-cache-dir -r requirements.bot.txt
@@ -12,5 +15,11 @@ RUN pip install --no-cache-dir -r requirements.bot.txt
 # Копируем общие модули и код бота
 COPY shared/ /app/shared/
 COPY bot/ /app/bot/
+
+# Изменяем владельца рабочей директории
+RUN chown -R appuser:appuser /app
+
+# Переключаемся на пользователя appuser
+USER appuser
 
 CMD ["python", "-m", "bot.bot_main"]

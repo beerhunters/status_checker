@@ -9,10 +9,12 @@ from shared.db import (
     add_site_to_user,
     get_user_sites,
     delete_site_by_id,
+    AsyncSessionFactory,
 )
 from shared.logger_setup import logger
 from bot.fsm import AddSite
 from bot.keyboards import get_main_menu_keyboard, get_sites_keyboard
+from shared.monitoring import update_site_availability
 
 router = Router()
 
@@ -57,11 +59,14 @@ async def process_url(message: Message, state: FSMContext):
         return
 
     try:
-        site = await add_site_to_user(message.from_user.id, url)
-        if site:
-            await message.answer(f"Сайт {url} успешно добавлен для отслеживания!")
-        else:
-            await message.answer(f"Сайт {url} уже отслеживается.")
+        async with AsyncSessionFactory() as session:
+            site = await add_site_to_user(message.from_user.id, url)
+            if site:
+                # Проверяем доступность и обновляем статус
+                await update_site_availability(session, site.id, url)
+                await message.answer(f"Сайт {url} успешно добавлен и проверен!")
+            else:
+                await message.answer(f"Сайт {url} уже отслеживается.")
     except Exception as e:
         await handle_db_error(message, "adding site")
 
@@ -110,10 +115,9 @@ async def delete_site_callback(callback: CallbackQuery):
         logger.error(f"Error deleting site {site_id} for {callback.from_user.id}: {e}")
         await callback.message.answer("Не удалось удалить сайт. Попробуйте позже.")
     finally:
-        await callback.answer()  # Всегда отвечаем на callback
+        await callback.answer()
 
 
-# Глобальный обработчик ошибок Aiogram
 @router.errors()
 async def error_handler(event: ErrorEvent):
     logger.critical(
@@ -121,7 +125,6 @@ async def error_handler(event: ErrorEvent):
         exc_info=True,
     )
 
-    # Уведомить пользователя, если это возможно и безопасно
     update = event.update
     user_id = None
     if update.message:
@@ -131,7 +134,6 @@ async def error_handler(event: ErrorEvent):
 
     if user_id:
         try:
-            # Не отправляем это при блокировке бота
             if not isinstance(event.exception, (TelegramForbiddenError)):
                 await event.update.bot.send_message(
                     user_id,

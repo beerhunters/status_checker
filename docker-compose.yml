@@ -1,49 +1,3 @@
-#version: '3.8'
-#
-#services:
-#  db:
-#    image: postgres:14-alpine
-#    restart: always
-#    env_file: .env
-#    environment:
-#      POSTGRES_USER: ${DB_USER}
-#      POSTGRES_PASSWORD: ${DB_PASSWORD}
-#      POSTGRES_DB: ${DB_NAME}
-#    volumes:
-#      - postgres_data:/var/lib/postgresql/data/
-#    healthcheck:
-#        test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-#        interval: 10s
-#        timeout: 5s
-#        retries: 5
-#
-#  bot:
-#    build:
-#      context: .
-#      dockerfile: bot/Dockerfile.bot
-#    restart: always
-#    env_file: .env
-#    depends_on:
-#        db:
-#            condition: service_healthy
-#
-#  web:
-#    build:
-#      context: .
-#      dockerfile: web/Dockerfile.web
-#    restart: always
-#    env_file: .env
-#    ports:
-#      - "8000:80"
-#    depends_on:
-#        db:
-#            condition: service_healthy
-#
-#volumes:
-#  postgres_data:
-
-version: '3.8'
-
 services:
   db:
     image: postgres:14-alpine
@@ -53,6 +7,8 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     healthcheck:
@@ -99,6 +55,7 @@ services:
       context: .
       dockerfile: bot/Dockerfile.bot
     command: celery -A bot.celery_app worker --loglevel=info
+    user: "1000:1000"
     env_file: .env
     depends_on:
         redis:
@@ -111,7 +68,10 @@ services:
       context: .
       dockerfile: bot/Dockerfile.bot
     command: celery -A bot.celery_app beat --loglevel=info
+    user: "1000:1000"
     env_file: .env
+    environment:
+      - CELERY_BEAT_SCHEDULE_FILENAME=/tmp/celerybeat-schedule
     depends_on:
         redis:
             condition: service_healthy

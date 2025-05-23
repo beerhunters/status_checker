@@ -1,5 +1,6 @@
 from celery import Celery
 from shared.config import settings
+from shared.logger_setup import logger
 
 celery_app = Celery(
     "website_monitor",
@@ -14,13 +15,11 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    beat_schedule={
-        "run-monitoring-check": {
-            "task": "bot.monitoring.run_monitoring_check",
-            "schedule": settings.check_interval_minutes * 60,  # В секундах
-        },
-    },
 )
 
-# Автообнаружение задач
-celery_app.autodiscover_tasks(["bot"])
+celery_app.conf.beat_schedule = {
+    "run-monitoring-check-every-5-minutes": {
+        "task": "bot.monitoring.run_monitoring_check",
+        "schedule": settings.check_interval_minutes * 60.0,
+    }
+}
