@@ -2,6 +2,7 @@ aiogram==3.*
 sqlalchemy[asyncio]
 asyncpg
 aiohttp
-apscheduler
+celery
+redis
 python-dotenv
 pydantic-settings

@@ -1,3 +1,47 @@
+#version: '3.8'
+#
+#services:
+#  db:
+#    image: postgres:14-alpine
+#    restart: always
+#    env_file: .env
+#    environment:
+#      POSTGRES_USER: ${DB_USER}
+#      POSTGRES_PASSWORD: ${DB_PASSWORD}
+#      POSTGRES_DB: ${DB_NAME}
+#    volumes:
+#      - postgres_data:/var/lib/postgresql/data/
+#    healthcheck:
+#        test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+#        interval: 10s
+#        timeout: 5s
+#        retries: 5
+#
+#  bot:
+#    build:
+#      context: .
+#      dockerfile: bot/Dockerfile.bot
+#    restart: always
+#    env_file: .env
+#    depends_on:
+#        db:
+#            condition: service_healthy
+#
+#  web:
+#    build:
+#      context: .
+#      dockerfile: web/Dockerfile.web
+#    restart: always
+#    env_file: .env
+#    ports:
+#      - "8000:80"
+#    depends_on:
+#        db:
+#            condition: service_healthy
+#
+#volumes:
+#  postgres_data:
+
 version: '3.8'
 
 services:
@@ -17,6 +61,15 @@ services:
         timeout: 5s
         retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: always
+    healthcheck:
+        test: ["CMD", "redis-cli", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+
   bot:
     build:
       context: .
@@ -25,6 +78,8 @@ services:
     env_file: .env
     depends_on:
         db:
+            condition: service_healthy
+        redis:
             condition: service_healthy
 
   web:
@@ -36,6 +91,30 @@ services:
     ports:
       - "8000:80"
     depends_on:
+        db:
+            condition: service_healthy
+
+  celery:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile.bot
+    command: celery -A bot.celery_app worker --loglevel=info
+    env_file: .env
+    depends_on:
+        redis:
+            condition: service_healthy
+        db:
+            condition: service_healthy
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile.bot
+    command: celery -A bot.celery_app beat --loglevel=info
+    env_file: .env
+    depends_on:
+        redis:
+            condition: service_healthy
         db:
             condition: service_healthy
 

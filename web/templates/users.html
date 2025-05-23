@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Пользователи - Админ-панель{% endblock %}
+
+{% block content %}
+    <h1>Список пользователей</h1>
+    {% if users %}
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Telegram ID</th>
+                <th>Username</th>
+                <th>Количество сайтов</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td>{{ user.telegram_id }}</td>
+                <td>{{ user.username or 'Нет имени' }}</td>
+                <td>{{ user.site_count }}</td>
+                <td>
+                    <a href="/users/{{ user.id }}/sites" class="btn btn-primary btn-sm">Просмотреть сайты</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>Пользователи не найдены.</p>
+    {% endif %}
+    <a href="/users" class="btn btn-secondary mt-3">Обновить</a>
+{% endblock %}
