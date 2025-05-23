@@ -1,0 +1,16 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Устанавливаем PYTHONPATH
+ENV PYTHONPATH=/app
+
+# Устанавливаем зависимости
+COPY bot/requirements.bot.txt .
+RUN pip install --no-cache-dir -r requirements.bot.txt
+
+# Копируем общие модули и код бота
+COPY shared/ /app/shared/
+COPY bot/ /app/bot/
+
+CMD ["python", "-m", "bot.bot_main"]

@@ -1,0 +1,7 @@
+aiogram==3.*
+sqlalchemy[asyncio]
+asyncpg
+aiohttp
+apscheduler
+python-dotenv
+pydantic-settings
