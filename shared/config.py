@@ -27,6 +27,7 @@ class Settings(BaseSettings):
         "INFO", env="LOG_LEVEL"
     )
     jwt_secret_key: str = Field("your-secure-random-key-here", env="JWT_SECRET_KEY")
+    # sqlalchemy_echo: bool = False
 
     @property
     def database_url_async(self) -> str:

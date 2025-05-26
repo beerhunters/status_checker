@@ -23,7 +23,7 @@
                 <td>{{ user.username or 'Нет имени' }}</td>
                 <td>{{ user.site_count }}</td>
                 <td>
-                    <a href="/users/{{ user.id }}/sites" class="btn btn-primary btn-sm">Просмотреть сайты</a>
+                    <a href="/users/{{ user.id }}" class="btn btn-primary btn-sm">Просмотреть сайты</a>
                 </td>
             </tr>
             {% endfor %}
