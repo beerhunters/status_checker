@@ -1,132 +1,76 @@
-# import aiohttp
-# import asyncio
-# from sqlalchemy.ext.asyncio import AsyncSession
-# from sqlalchemy.sql import text  # Явный импорт text
-# from shared.logger_setup import logger
-#
-#
-# async def check_website(url: str) -> bool:
-#     """Checks if a website returns a 2xx status code."""
-#     try:
-#         headers = {"User-Agent": "WebsiteMonitorBot/1.0 (+https://yourbot.info)"}
-#         async with aiohttp.ClientSession(
-#             timeout=aiohttp.ClientTimeout(total=15), headers=headers
-#         ) as session:
-#             async with session.get(url, allow_redirects=True, ssl=False) as response:
-#                 is_available = 200 <= response.status < 300
-#                 logger.debug(
-#                     f"Checked {url}, status: {response.status}, available: {is_available}"
-#                 )
-#                 return is_available
-#     except aiohttp.ClientConnectorError as e:
-#         logger.warning(f"Connection error checking {url}: {e}")
-#         return False
-#     except aiohttp.ClientError as e:
-#         logger.warning(f"Client error checking {url}: {e}")
-#         return False
-#     except asyncio.TimeoutError:
-#         logger.warning(f"Timeout checking {url}")
-#         return False
-#     except Exception as e:
-#         logger.error(f"Unexpected error checking {url}: {type(e).__name__} - {e}")
-#         return False
-#
-#
-# async def update_site_availability(
-#     session: AsyncSession, site_id: int, url: str
-# ) -> bool:
-#     """Обновляет статус доступности сайта в базе данных."""
-#     is_available = await check_website(url)
-#     try:
-#         result = await session.execute(
-#             text(
-#                 "UPDATE sites SET is_available = :is_available WHERE id = :site_id RETURNING id"
-#             ),
-#             {"is_available": is_available, "site_id": site_id},
-#         )
-#         await session.commit()
-#         if result.scalars().first():
-#             logger.info(
-#                 f"Updated availability for site {site_id}: {'available' if is_available else 'unavailable'}"
-#             )
-#             return is_available
-#         else:
-#             logger.warning(f"Site {site_id} not found during availability update")
-#             return False
-#     except Exception as e:
-#         logger.error(f"Failed to update availability for site {site_id}: {e}")
-#         await session.rollback()
-#         return False
+# shared/monitoring.py
 import aiohttp
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import text
+from sqlalchemy.future import select
 from shared.logger_setup import logger
+from shared.models import Site
+from sqlalchemy.sql import text
 
 
-async def check_website(
-    url: str, retries: int = 2, semaphore: asyncio.Semaphore = None
-) -> bool:
-    if semaphore is None:
-        semaphore = asyncio.Semaphore(50)  # Limit to 50 concurrent requests
-    for attempt in range(retries):
-        async with semaphore:
-            try:
-                headers = {
-                    "User-Agent": "WebsiteMonitorBot/1.0 (+https://yourbot.info)"
-                }
-                async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=10), headers=headers
-                ) as session:
+async def check_website_async(url: str, retries: int = 2) -> bool:
+    """Проверяет доступность сайта асинхронно."""
+    logger.debug(f"Начинаем асинхронную проверку сайта: {url}")
+    headers = {"User-Agent": "WebsiteMonitorBot/1.0 (Async Check)"}
+    # Устанавливаем таймаут для всех операций
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    try:
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            for attempt in range(retries):
+                try:
                     async with session.get(url, allow_redirects=True) as response:
-                        is_available = 200 <= response.status < 300
-                        logger.debug(
-                            f"Attempt {attempt + 1}: {url}, status: {response.status}, available: {is_available}"
+                        is_available = (
+                            200 <= response.status < 400
+                        )  # Считаем редиректы (3xx) успешными
+                        logger.info(
+                            f"{url} — {'доступен' if is_available else 'недоступен'} "
+                            f"(статус: {response.status}, асинхронная попытка {attempt + 1})"
                         )
                         return is_available
-            except aiohttp.ClientConnectorError as e:
-                logger.warning(
-                    f"Attempt {attempt + 1} connection error checking {url}: {e}"
-                )
-            except aiohttp.ClientSSLError as e:
-                logger.warning(f"Attempt {attempt + 1} SSL error checking {url}: {e}")
-            except aiohttp.ClientError as e:
-                logger.warning(
-                    f"Attempt {attempt + 1} client error checking {url}: {e}"
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"Attempt {attempt + 1} timeout checking {url}")
-            except Exception as e:
-                logger.error(
-                    f"Attempt {attempt + 1} unexpected error checking {url}: {e}"
-                )
-            if attempt < retries - 1:
-                await asyncio.sleep(1)
-    return False
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    logger.warning(
+                        f"Ошибка при асинхронной проверке {url} (попытка {attempt + 1}): {type(e).__name__} - {e}"
+                    )
+                    if attempt < retries - 1:
+                        await asyncio.sleep(
+                            1
+                        )  # Небольшая пауза перед повторной попыткой
+                except Exception as e:
+                    logger.error(
+                        f"Неожиданная ошибка при асинхронной проверке {url}: {e}",
+                        exc_info=True,
+                    )
+                    return False  # В случае неожиданной ошибки считаем недоступным
+    except Exception as e:
+        logger.error(f"Ошибка создания aiohttp сессии для {url}: {e}", exc_info=True)
+
+    return False  # Если все попытки не удались
 
 
 async def update_site_availability(
     session: AsyncSession, site_id: int, url: str
 ) -> bool:
-    """Updates the availability status of a site in the database."""
-    is_available = await check_website(url)
+    """Обновляет статус сайта в БД асинхронно и возвращает статус."""
+    logger.debug(f"Асинхронное обновление статуса сайта ID={site_id}, URL={url}")
     try:
-        result = await session.execute(
-            text(
-                "UPDATE sites SET is_available = :is_available WHERE id = :site_id RETURNING id"
-            ),
-            {"is_available": is_available, "site_id": site_id},
-        )
-        await session.commit()
-        if result.scalars().first():
+        is_available = await check_website_async(url)
+        site = await session.get(
+            Site, site_id
+        )  # Используем session.get для поиска по PK
+        if site:
+            site.is_available = is_available
+            await session.flush()  # Применяем изменения, но не коммитим (коммит в вызывающей функции)
             logger.info(
-                f"Updated availability for site {site_id}: {'available' if is_available else 'unavailable'}"
+                f"Статус сайта {site_id} подготовлен к обновлению (асинхронно): {'доступен' if is_available else 'недоступен'}"
             )
             return is_available
         else:
-            logger.warning(f"Site {site_id} not found during availability update")
+            logger.warning(f"Сайт {site_id} не найден в базе данных (асинхронно).")
             return False
     except Exception as e:
-        logger.error(f"Failed to update availability for site {site_id}: {e}")
-        await session.rollback()
-        return False
+        logger.error(
+            f"Ошибка при асинхронном обновлении статуса сайта {site_id}: {e}",
+            exc_info=True,
+        )
+        raise  # Перевыбрасываем, чтобы вызывающая функция могла обработать и сделать rollback

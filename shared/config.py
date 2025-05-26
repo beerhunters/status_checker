@@ -1,7 +1,14 @@
+# shared/config.py
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from typing import Literal
 from shared.logger_setup import logger
+import os
+
+# Загружаем переменные из .env файла, если он существует
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -22,8 +29,14 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field("your-secure-random-key-here", env="JWT_SECRET_KEY")
 
     @property
-    def database_url(self) -> str:
+    def database_url_async(self) -> str:
+        """Асинхронный URL для SQLAlchemy (asyncpg)."""
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @property
+    def database_url_sync(self) -> str:
+        """Синхронный URL для SQLAlchemy (psycopg2)."""
+        return f"postgresql+psycopg2://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     class Config:
         env_file = ".env"
@@ -31,4 +44,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-logger.debug(f"Loaded settings: {settings.dict()}")
+logger.debug(f"Loaded settings (DB_HOST: {settings.db_host})")

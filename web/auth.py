@@ -1,81 +1,114 @@
-from fastapi import Depends, HTTPException, status, Request
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+# web/auth.py
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, status, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from passlib.context import CryptContext
+from datetime import datetime, timedelta, timezone
+from jose import JWTError, jwt
+from typing import Optional
+
 from shared.config import settings
 from shared.logger_setup import logger
-import secrets
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
 
-# Секретный ключ для JWT (в продакшене должен быть безопасным и храниться в .env)
-JWT_SECRET_KEY = (
-    settings.jwt_secret_key
-    if hasattr(settings, "jwt_secret_key")
-    else "your-secret-key"
-)
+router = APIRouter()
+templates = Jinja2Templates(directory="web/templates")
+
+# Настройки JWT
 ALGORITHM = "HS256"
-TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 день
 
-security = HTTPBasic()
+# Контекст для паролей (используем только для сравнения, т.к. пароль хранится в конфиге)
+# В реальном приложении пароли должны храниться в БД в виде хешей.
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def create_jwt_token(data: dict):
-    """Создает JWT-токен с временем жизни."""
+def verify_password(plain_password, hashed_password):
+    # В нашем случае 'hashed_password' - это просто пароль из конфига.
+    # Это НЕБЕЗОПАСНО для продакшена. Здесь это для простоты.
+    return plain_password == hashed_password
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=ALGORITHM)
     return encoded_jwt
 
 
-async def get_current_user(request: Request):
-    """Проверяет JWT-токен из cookie."""
+async def get_current_user(request: Request) -> Optional[str]:
+    """Проверяет JWT токен из куки и возвращает имя пользователя."""
     token = request.cookies.get("access_token")
     if not token:
-        logger.warning("No token found in cookies")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return None
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            logger.warning("Invalid token: no username in payload")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        logger.debug(f"User {username} authenticated successfully via JWT")
+            return None
         return username
-    except JWTError as e:
-        logger.warning(f"JWT decode error: {e}")
+    except JWTError:
+        return None
+
+
+async def login_required(request: Request):
+    """Зависимость, требующая авторизации. Перенаправляет на /login, если не авторизован."""
+    user = await get_current_user(request)
+    if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/login"},
+        )
+    return user
+
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, error: Optional[str] = None):
+    """Отображает страницу входа."""
+    return templates.TemplateResponse(
+        "login.html", {"request": request, "error": error}
+    )
+
+
+@router.post("/login")
+async def login(
+    response: Response, username: str = Form(...), password: str = Form(...)
+):
+    """Обрабатывает попытку входа."""
+    if username == settings.admin_username and verify_password(
+        password, settings.admin_password
+    ):
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": username}, expires_delta=access_token_expires
+        )
+        # Устанавливаем токен в куки
+        response = RedirectResponse(url="/users", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            samesite="lax",
+            max_age=int(access_token_expires.total_seconds()),
+        )
+        logger.info(f"Admin user '{username}' logged in.")
+        return response
+    else:
+        logger.warning(f"Failed login attempt for user '{username}'.")
+        # Перенаправляем обратно на страницу входа с сообщением об ошибке
+        return RedirectResponse(
+            url="/login?error=Неверное имя пользователя или пароль",
+            status_code=status.HTTP_303_SEE_OTHER,
         )
 
 
-AuthDependency = Depends(get_current_user)
-
-
-def verify_basic_auth(credentials: HTTPBasicCredentials = Depends(security)):
-    """Проверяет Basic Auth для формы логина."""
-    logger.debug(f"Attempting login with username: {credentials.username}")
-    correct_username = secrets.compare_digest(
-        credentials.username, settings.admin_username
-    )
-    correct_password = secrets.compare_digest(
-        credentials.password, settings.admin_password
-    )
-    if not (correct_username and correct_password):
-        logger.warning(f"Failed login attempt for user: {credentials.username}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    logger.debug(f"User {credentials.username} authenticated successfully.")
-    return credentials.username
+@router.get("/logout")
+async def logout(response: Response):
+    """Выход из системы (удаление куки)."""
+    response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie("access_token")
+    logger.info("Admin user logged out.")
+    return response

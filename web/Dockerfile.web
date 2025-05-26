@@ -1,16 +1,22 @@
+# web/Dockerfile.web
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Устанавливаем PYTHONPATH
 ENV PYTHONPATH=/app
 
-# Устанавливаем зависимости
 COPY web/requirements.web.txt .
-RUN pip install --no-cache-dir -r requirements.web.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.web.txt
 
 # Копируем общие модули и код веба
 COPY shared/ /app/shared/
 COPY web/ /app/web/
 
-CMD ["uvicorn", "web.web_main:app", "--host", "0.0.0.0", "--port", "80"]
+RUN useradd -m -u 1001 webuser && \
+    chown -R webuser:webuser /app
+
+USER webuser
+
+# Запускаем веб-сервер с помощью Uvicorn
+CMD ["uvicorn", "web.web_main:app", "--host", "0.0.0.0", "--port", "8000"]

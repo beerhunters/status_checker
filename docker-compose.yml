@@ -1,80 +1,116 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:14-alpine
-    restart: always
-    env_file: .env
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-      LANG: en_US.UTF-8
-      LC_ALL: en_US.UTF-8
+    container_name: monitoring_db
     volumes:
       - postgres_data:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      POSTGRES_DB: ${DB_NAME:-monitoring_bot}
+    ports:
+      - "5432:5432" # Осторожно! Открывает порт наружу. Уберите в продакшене.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-monitoring_bot}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: always
 
   redis:
     image: redis:7-alpine
-    restart: always
+    container_name: monitoring_redis
+    ports:
+      - "6379:6379" # Осторожно! Открывает порт наружу. Уберите в продакшене.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: always
 
   bot:
     build:
       context: .
       dockerfile: bot/Dockerfile.bot
-    restart: always
-    env_file: .env
+    container_name: monitoring_bot_app
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DB_HOST: db # Используем имя сервиса
+      REDIS_HOST: redis # Используем имя сервиса
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: always
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile.bot # Используем тот же Dockerfile, что и для бота
+    container_name: monitoring_celery_worker
+    command: ["celery", "-A", "bot.celery_app:celery_app", "worker", "-P", "eventlet", "-c", "20", "--loglevel=INFO"]
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DB_HOST: db
+      REDIS_HOST: redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      bot:
+        condition: service_started
+    restart: always
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile.bot # Используем тот же Dockerfile
+    container_name: monitoring_celery_beat
+    # --- ИСПРАВЛЕНА КОМАНДА ---
+    # Убран --scheduler, используется стандартный, который берет расписание из celery_app.py
+    command: ["celery", "-A", "bot.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DB_HOST: db
+      REDIS_HOST: redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
 
   web:
     build:
       context: .
       dockerfile: web/Dockerfile.web
-    restart: always
-    env_file: .env
-    ports:
-      - "8000:80"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  celery:
-    build:
-      context: .
-      dockerfile: bot/Dockerfile.bot
-    command: celery -A bot.celery_app worker --loglevel=INFO -P eventlet -c 100
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-
-  celery-beat:
-    build:
-      context: .
-      dockerfile: bot/Dockerfile.bot
-    command: python -m bot.patch_eventlet && celery -A bot.celery_app beat --loglevel=DEBUG
-    user: "1000:1000"
-    env_file: .env
+    container_name: monitoring_web_app
+    env_file:
+      - .env
     environment:
-      - CELERY_BEAT_SCHEDULE_FILENAME=/tmp/celerybeat-schedule
+      PYTHONPATH: /app
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DB_HOST: db
+    ports:
+      - "8000:8000"
     depends_on:
-      redis:
-        condition: service_healthy
       db:
         condition: service_healthy
+    restart: always
 
 volumes:
   postgres_data:

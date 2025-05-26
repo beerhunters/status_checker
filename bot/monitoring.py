@@ -1,120 +1,112 @@
 # bot/monitoring.py
-
 import requests
 import time
 from celery import shared_task
 from sqlalchemy.orm import Session
-from shared.db import SessionFactory
+from datetime import datetime, timezone
+from shared.db import SyncSessionFactory  # Используем Sync Session
 from shared.logger_setup import logger
+from shared.models import Site, User
+from sqlalchemy.future import select
+
+# --- Синхронные функции для Celery ---
 
 
-def check_website_sync(url: str, retries: int = 2) -> bool:
-    """Проверяет доступность сайта синхронно."""
-    logger.debug(f"Начинаем проверку сайта: {url}")
+def check_website_sync(url: str, retries: int = 3, delay: int = 2) -> bool:
+    """Проверяет доступность сайта синхронно с повторными попытками."""
+    logger.debug(f"Начинаем синхронную проверку сайта: {url}")
+    headers = {"User-Agent": "WebsiteMonitorBot/1.0 (Sync Check)"}
     for attempt in range(retries):
         try:
-            headers = {"User-Agent": "WebsiteMonitorBot/1.0"}
-            response = requests.get(url, headers=headers, timeout=10)
-            is_available = 200 <= response.status_code < 300
+            response = requests.get(
+                url, headers=headers, timeout=10, allow_redirects=True
+            )
+            # Считаем 2xx и 3xx успешными
+            is_available = 200 <= response.status_code < 400
             logger.info(
-                f"{url} — {'доступен' if is_available else 'недоступен'} (попытка {attempt + 1})"
+                f"{url} — {'доступен' if is_available else 'недоступен'} "
+                f"(статус: {response.status_code}, попытка {attempt + 1})"
             )
             return is_available
         except requests.RequestException as e:
-            logger.warning(f"Ошибка при проверке {url}: {e}")
+            logger.warning(f"Ошибка при проверке {url} (попытка {attempt + 1}): {e}")
             if attempt < retries - 1:
-                time.sleep(1)
+                time.sleep(delay)  # Пауза перед повтором
+    logger.warning(f"Сайт {url} недоступен после {retries} попыток.")
     return False
 
 
-def update_site_availability_sync(session: Session, site_id: int, url: str) -> bool:
-    """Обновляет статус сайта в БД."""
-    logger.debug(f"Обновление статуса сайта ID={site_id}, URL={url}")
-    try:
-        is_available = check_website_sync(url)
-
-        # Прямой SQL-запрос через синхронную сессию
-        result = session.execute(
-            "UPDATE sites SET is_available = :status WHERE id = :site_id RETURNING id",
-            {"status": is_available, "site_id": site_id},
-        )
-        session.commit()
-
-        if result.fetchone():
-            logger.info(
-                f"Статус сайта {site_id} успешно обновлён: {'доступен' if is_available else 'недоступен'}"
-            )
-            return is_available
-        else:
-            logger.warning(f"Сайт {site_id} не найден в базе данных.")
-            return False
-    except Exception as e:
-        logger.error(
-            f"Ошибка при обновлении статуса сайта {site_id}: {e}", exc_info=True
-        )
-        session.rollback()
-        return False
-
-
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)  # Повтор через 60 секунд
 def check_single_site(self, site_id: int, url: str, user_id: int):
     """Задача Celery для проверки одного сайта."""
-    logger.debug(f"Выполняется задача Celery для сайта {site_id}")
-    with SessionFactory() as session:
+    logger.debug(f"Выполняется задача Celery для сайта ID={site_id}, URL={url}")
+    with SyncSessionFactory() as session:
         try:
-            is_available = update_site_availability_sync(session, site_id, url)
+            # Используем .get() для загрузки по первичному ключу
+            site = session.get(Site, site_id)
+            if not site:
+                logger.warning(f"Сайт ID={site_id} не найден в задаче Celery.")
+                return
 
-            if not is_available:
-                # Проверяем, отправляли ли уведомление недавно
-                last_notified_row = session.execute(
-                    "SELECT last_notified FROM sites WHERE id = :site_id",
-                    {"site_id": site_id},
-                ).fetchone()
+            was_available = site.is_available
+            is_available = check_website_sync(url)
+            now = datetime.now(timezone.utc)  # Используем UTC
 
-                last_notified = last_notified_row[0] if last_notified_row else None
-                now = datetime.utcnow()
+            send_alert = False
+            # Если статус изменился на "недоступен"
+            if was_available and not is_available:
+                send_alert = True
+                site.last_notified = now
+            # Если статус "недоступен" и прошло > 15 минут (или никогда не уведомляли)
+            elif not is_available and (
+                site.last_notified is None
+                or (now - site.last_notified).total_seconds() > 900
+            ):
+                send_alert = True
+                site.last_notified = now
 
-                if (
-                    last_notified is None or (now - last_notified).total_seconds() > 900
-                ):  # 15 минут
-                    from bot.bot_main import send_notification_sync
+            # Обновляем статус и время проверки в любом случае
+            site.is_available = is_available
+            site.last_checked = now
+            session.commit()  # Сохраняем изменения
 
-                    try:
-                        send_notification_sync(
-                            user_id, f"🚨 Внимание! Ваш сайт {url} недоступен!"
-                        )
-                        logger.info(
-                            f"Уведомление о недоступности отправлено пользователю {user_id}"
-                        )
+            if send_alert:
+                logger.info(
+                    f"Сайт {url} (ID={site_id}) недоступен. Отправка уведомления пользователю {user_id}..."
+                )
+                from bot.bot_main import send_notification_sync
 
-                        session.execute(
-                            "UPDATE sites SET last_notified = :now WHERE id = :site_id",
-                            {"now": now, "site_id": site_id},
-                        )
-                        session.commit()
-                    except Exception as e:
-                        logger.error(
-                            f"Ошибка отправки уведомления для сайта {url}: {e}"
-                        )
-                        raise self.retry(countdown=60)
-            return is_available
+                send_notification_sync(
+                    user_id, f"🚨 Внимание! Ваш сайт {url} недоступен!"
+                )
+
+        except requests.RequestException as exc:
+            logger.warning(f"Сетевая ошибка при проверке {url}, повтор... ({exc})")
+            raise self.retry(exc=exc)  # Celery выполнит повтор
         except Exception as e:
-            logger.error(f"Ошибка обработки сайта {site_id}: {e}", exc_info=True)
-            raise self.retry(countdown=60)
+            logger.error(
+                f"Неожиданная ошибка обработки сайта {site_id}: {e}", exc_info=True
+            )
+            # Здесь можно решить, стоит ли повторять при других ошибках
+            # raise self.retry(exc=e)
 
 
 @shared_task
 def run_monitoring_check():
     """Задача запуска мониторинга всех сайтов."""
-    logger.debug("Запуск задачи run_monitoring_check")
-    with SessionFactory() as session:
+    logger.info("Запуск периодической задачи run_monitoring_check...")
+    with SyncSessionFactory() as session:
         try:
-            result = session.execute("SELECT id, url, user_id FROM sites")
-            sites = result.fetchall()
-            logger.info(f"Найдено {len(sites)} сайтов для проверки")
+            # Выбираем только id, url и user_id, чтобы не загружать лишнего
+            stmt = select(Site.id, Site.url, Site.user_id)
+            sites = session.execute(stmt).fetchall()
+            logger.info(f"Найдено {len(sites)} сайтов для проверки.")
 
-            for site in sites:
-                site_id, url, user_id = site
+            for site_id, url, user_id in sites:
                 check_single_site.delay(site_id, url, user_id)
+            logger.info("Задачи на проверку сайтов успешно поставлены в очередь.")
         except Exception as e:
-            logger.error(f"Ошибка при получении списка сайтов: {e}", exc_info=True)
+            logger.error(
+                f"Ошибка при получении списка сайтов для мониторинга: {e}",
+                exc_info=True,
+            )
