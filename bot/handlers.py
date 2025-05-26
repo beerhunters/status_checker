@@ -38,6 +38,30 @@ async def command_start_handler(message: Message) -> None:
         await handle_db_error(message, "start command")
 
 
+@router.callback_query(F.data == "to_start")
+async def to_start_callback(callback: CallbackQuery):
+    try:
+        await get_or_create_user(callback.from_user.id, callback.from_user.username)
+        await callback.message.edit_text(
+            f"Привет, {callback.from_user.full_name}! Я помогу тебе отслеживать доступность сайтов.",
+            reply_markup=get_main_menu_keyboard(),
+        )
+    except TelegramBadRequest as e:
+        logger.warning(f"Failed to edit message for to_start: {e}")
+        await callback.message.answer(
+            f"Привет, {callback.from_user.full_name}! Я помогу тебе отслеживать доступность сайтов.",
+            reply_markup=get_main_menu_keyboard(),
+        )
+    except Exception as e:
+        logger.error(f"Error in to_start for user {callback.from_user.id}: {e}")
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=get_main_menu_keyboard(),
+        )
+    finally:
+        await callback.answer()
+
+
 @router.callback_query(F.data == "add_site")
 async def add_site_callback(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
