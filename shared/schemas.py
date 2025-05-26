@@ -18,5 +18,4 @@ class Site(SiteBase):
     user_id: int
 
     class Config:
-        # orm_mode = True  # Включаем поддержку ORM для автоматического преобразования из SQLAlchemy
         from_attributes = True  # Updated from orm_mode
