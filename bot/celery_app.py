@@ -1,15 +1,17 @@
-import bot.patch_eventlet  # Патчим eventlet первым
+# bot/celery_app.py
 
+import bot.patch_eventlet  # Патчим eventlet первым
 from celery import Celery
 from shared.config import settings
 from shared.logger_setup import logger
 
 logger.debug("Инициализация Celery приложения")
+
 celery_app = Celery(
     "website_monitor",
     broker=f"redis://{settings.redis_host}:{settings.redis_port}/0",
     backend=f"redis://{settings.redis_host}:{settings.redis_port}/0",
-    include=["bot.monitoring", "bot.bot_main"],
+    include=["bot.monitoring"],
 )
 
 celery_app.conf.update(
@@ -22,7 +24,7 @@ celery_app.conf.update(
     task_time_limit=300,
     task_soft_time_limit=270,
     worker_concurrency=100,
-    broker_connection_retry_on_startup=True,  # Повтор подключения к Redis
+    broker_connection_retry_on_startup=True,
     worker_log_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     task_log_format="%(asctime)s - %(name)s - %(levelname)s - Task %(task_name)s[%(task_id)s]: %(message)s",
 )
@@ -34,4 +36,4 @@ celery_app.conf.beat_schedule = {
     }
 }
 
-logger.debug("Celery приложение настроено")
+logger.debug("Celery настроен")

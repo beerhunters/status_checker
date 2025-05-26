@@ -54,9 +54,7 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile.bot
-    command: celery -A bot.celery_app worker --loglevel=DEBUG --pool=prefork --concurrency=10
-    user: "1000:1000"
-    env_file: .env
+    command: celery -A bot.celery_app worker --loglevel=INFO -P eventlet -c 100
     depends_on:
       redis:
         condition: service_healthy

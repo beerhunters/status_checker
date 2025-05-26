@@ -2,6 +2,7 @@ import os
 from typing import List, Optional
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, selectinload
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,8 +11,18 @@ from shared.models import Base, User, Site
 from shared.config import settings
 from shared.logger_setup import logger
 
-engine = create_async_engine(settings.database_url, echo=False)
-AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# engine = create_async_engine(settings.database_url, echo=False)
+# AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Синхронный движок
+engine = create_engine(
+    settings.database_url.replace("+asyncpg", ""),  # Убираем async для Celery
+    echo=False,
+)
+
+# Синхронная фабрика сессий
+AsyncSessionFactory = sessionmaker(bind=engine)
+
+logger.debug("Создан синхронный движок БД для Celery")
 
 
 async def init_db():
