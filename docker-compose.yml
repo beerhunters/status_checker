@@ -12,19 +12,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     restart: always
     healthcheck:
-        test: ["CMD", "redis-cli", "ping"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   bot:
     build:
@@ -33,10 +33,10 @@ services:
     restart: always
     env_file: .env
     depends_on:
-        db:
-            condition: service_healthy
-        redis:
-            condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web:
     build:
@@ -47,14 +47,14 @@ services:
     ports:
       - "8000:80"
     depends_on:
-        db:
-            condition: service_healthy
+      db:
+        condition: service_healthy
 
   celery:
     build:
       context: .
       dockerfile: bot/Dockerfile.bot
-    command: celery -A bot.celery_app worker --loglevel=info --pool=gevent
+    command: celery -A bot.celery_app worker --loglevel=DEBUG --pool=prefork --concurrency=10
     user: "1000:1000"
     env_file: .env
     depends_on:
@@ -67,16 +67,16 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile.bot
-    command: celery -A bot.celery_app beat --loglevel=info
+    command: python -m bot.patch_eventlet && celery -A bot.celery_app beat --loglevel=DEBUG
     user: "1000:1000"
     env_file: .env
     environment:
       - CELERY_BEAT_SCHEDULE_FILENAME=/tmp/celerybeat-schedule
     depends_on:
-        redis:
-            condition: service_healthy
-        db:
-            condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:

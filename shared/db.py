@@ -87,14 +87,10 @@ async def _get_user_sites(session: AsyncSession, telegram_id: int) -> List[Site]
     return result.scalars().all()
 
 
-# async def _get_all_sites_with_users(session: AsyncSession) -> List[Site]:
-#     stmt = (
-#         select(Site).options(selectinload(Site.user)).order_by(Site.id)
-#     )  # Eager load users
-#     result = await session.execute(stmt)
-#     return result.scalars().unique().all()
-async def _get_all_sites_with_users(session: AsyncSession) -> List[Site]:
-    stmt = select(Site).order_by(Site.id)
+async def _get_all_sites_with_users(
+    session: AsyncSession, offset: int = 0, limit: int = 100
+) -> List[Site]:
+    stmt = select(Site).order_by(Site.id).offset(offset).limit(limit)
     result = await session.execute(stmt)
     return result.scalars().all()
 
@@ -165,8 +161,8 @@ async def get_user_sites(telegram_id: int) -> List[Site]:
     return await run_db_operation(_get_user_sites, telegram_id)
 
 
-async def get_all_sites_with_users() -> List[Site]:
-    return await run_db_operation(_get_all_sites_with_users)
+async def get_all_sites_with_users(offset: int = 0, limit: int = 100) -> List[Site]:
+    return await run_db_operation(_get_all_sites_with_users, offset=offset, limit=limit)
 
 
 async def delete_site_by_id(site_id: int, telegram_id: int) -> bool:

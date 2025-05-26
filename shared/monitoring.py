@@ -64,45 +64,44 @@ from sqlalchemy.sql import text
 from shared.logger_setup import logger
 
 
-async def check_website(url: str, retries: int = 2) -> bool:
-    """Checks if a website returns a 2xx status code with retries."""
+async def check_website(
+    url: str, retries: int = 2, semaphore: asyncio.Semaphore = None
+) -> bool:
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(50)  # Limit to 50 concurrent requests
     for attempt in range(retries):
-        try:
-            headers = {"User-Agent": "WebsiteMonitorBot/1.0 (+https://yourbot.info)"}
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10), headers=headers
-            ) as session:
-                async with session.get(url, allow_redirects=True) as response:
-                    is_available = 200 <= response.status < 300
-                    logger.debug(
-                        f"Attempt {attempt + 1}: {url}, status: {response.status}, available: {is_available}, headers: {response.headers}"
-                    )
-                    return is_available
-        except aiohttp.ClientConnectorError as e:
-            logger.warning(
-                f"Attempt {attempt + 1} connection error checking {url}: {e}"
-            )
-            if attempt == retries - 1:
-                return False
-        except aiohttp.ClientSSLError as e:
-            logger.warning(f"Attempt {attempt + 1} SSL error checking {url}: {e}")
-            if attempt == retries - 1:
-                return False
-        except aiohttp.ClientError as e:
-            logger.warning(f"Attempt {attempt + 1} client error checking {url}: {e}")
-            if attempt == retries - 1:
-                return False
-        except asyncio.TimeoutError:
-            logger.warning(f"Attempt {attempt + 1} timeout checking {url}")
-            if attempt == retries - 1:
-                return False
-        except Exception as e:
-            logger.error(
-                f"Attempt {attempt + 1} unexpected error checking {url}: {type(e).__name__} - {e}"
-            )
-            if attempt == retries - 1:
-                return False
-        await asyncio.sleep(1)
+        async with semaphore:
+            try:
+                headers = {
+                    "User-Agent": "WebsiteMonitorBot/1.0 (+https://yourbot.info)"
+                }
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=10), headers=headers
+                ) as session:
+                    async with session.get(url, allow_redirects=True) as response:
+                        is_available = 200 <= response.status < 300
+                        logger.debug(
+                            f"Attempt {attempt + 1}: {url}, status: {response.status}, available: {is_available}"
+                        )
+                        return is_available
+            except aiohttp.ClientConnectorError as e:
+                logger.warning(
+                    f"Attempt {attempt + 1} connection error checking {url}: {e}"
+                )
+            except aiohttp.ClientSSLError as e:
+                logger.warning(f"Attempt {attempt + 1} SSL error checking {url}: {e}")
+            except aiohttp.ClientError as e:
+                logger.warning(
+                    f"Attempt {attempt + 1} client error checking {url}: {e}"
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Attempt {attempt + 1} timeout checking {url}")
+            except Exception as e:
+                logger.error(
+                    f"Attempt {attempt + 1} unexpected error checking {url}: {e}"
+                )
+            if attempt < retries - 1:
+                await asyncio.sleep(1)
     return False
 
 

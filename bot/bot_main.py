@@ -40,6 +40,14 @@ async def send_notification(user_id: int, message_text: str):
         logger.error(f"Unexpected error sending message to {user_id}: {e}")
 
 
+def send_notification_sync(user_id: int, message: str):
+    bot = Bot(token=settings.bot_token)
+    try:
+        bot.send_message(user_id, message)
+    finally:
+        bot.session.close()
+
+
 async def main() -> None:
     logger.info("Starting Website Monitor Bot...")
 
