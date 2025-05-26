@@ -6,7 +6,7 @@ celery_app = Celery(
     "website_monitor",
     broker=f"redis://{settings.redis_host}:{settings.redis_port}/0",
     backend=f"redis://{settings.redis_host}:{settings.redis_port}/0",
-    include=["bot.monitoring"],
+    include=["bot.monitoring", "bot.bot_main"],
 )
 
 celery_app.conf.update(

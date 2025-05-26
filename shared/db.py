@@ -87,12 +87,16 @@ async def _get_user_sites(session: AsyncSession, telegram_id: int) -> List[Site]
     return result.scalars().all()
 
 
+# async def _get_all_sites_with_users(session: AsyncSession) -> List[Site]:
+#     stmt = (
+#         select(Site).options(selectinload(Site.user)).order_by(Site.id)
+#     )  # Eager load users
+#     result = await session.execute(stmt)
+#     return result.scalars().unique().all()
 async def _get_all_sites_with_users(session: AsyncSession) -> List[Site]:
-    stmt = (
-        select(Site).options(selectinload(Site.user)).order_by(Site.id)
-    )  # Eager load users
+    stmt = select(Site).order_by(Site.id)
     result = await session.execute(stmt)
-    return result.scalars().unique().all()
+    return result.scalars().all()
 
 
 async def _delete_site_by_id(

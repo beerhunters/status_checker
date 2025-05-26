@@ -15,15 +15,25 @@ bot = Bot(
 )
 
 
+# async def send_notification(user_id: int, message_text: str):
+#     """Отправляет уведомление с обработкой ошибок."""
+#     try:
+#         await bot.send_message(user_id, message_text)
+#         logger.debug(f"Sent notification to {user_id}")
+#     except TelegramForbiddenError:
+#         logger.warning(
+#             f"User {user_id} blocked the bot. Consider marking user as inactive."
+#         )
+#     except TelegramAPIError as e:
+#         logger.error(f"Failed to send message to {user_id}: {e}")
+#     except Exception as e:
+#         logger.error(f"Unexpected error sending message to {user_id}: {e}")
 async def send_notification(user_id: int, message_text: str):
-    """Отправляет уведомление с обработкой ошибок."""
     try:
         await bot.send_message(user_id, message_text)
         logger.debug(f"Sent notification to {user_id}")
     except TelegramForbiddenError:
-        logger.warning(
-            f"User {user_id} blocked the bot. Consider marking user as inactive."
-        )
+        logger.warning(f"User {user_id} blocked the bot...")
     except TelegramAPIError as e:
         logger.error(f"Failed to send message to {user_id}: {e}")
     except Exception as e:

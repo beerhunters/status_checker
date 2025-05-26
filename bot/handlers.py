@@ -95,21 +95,48 @@ async def process_url(message: Message, state: FSMContext):
         await handle_db_error(message, "adding site")
 
 
+# @router.callback_query(F.data == "list_sites")
+# async def list_sites_callback(callback: CallbackQuery):
+#     try:
+#         sites = await get_user_sites(callback.from_user.id)
+#         keyboard = get_sites_keyboard(sites)
+#         if not sites:
+#             await callback.message.answer("У вас пока нет сайтов для отслеживания.")
+#         else:
+#             await callback.message.answer(
+#                 "Ваши сайты (нажмите, чтобы удалить):", reply_markup=keyboard
+#             )
+#     except Exception as e:
+#         logger.error(f"Error listing sites for {callback.from_user.id}: {e}")
+#         await callback.message.answer(
+#             "Не удалось получить список сайтов. Попробуйте позже."
+#         )
+#     finally:
+#         await callback.answer()
 @router.callback_query(F.data == "list_sites")
 async def list_sites_callback(callback: CallbackQuery):
     try:
         sites = await get_user_sites(callback.from_user.id)
         keyboard = get_sites_keyboard(sites)
         if not sites:
-            await callback.message.answer("У вас пока нет сайтов для отслеживания.")
+            await callback.message.edit_text(
+                "У вас пока нет сайтов для отслеживания.", reply_markup=keyboard
+            )
         else:
-            await callback.message.answer(
+            await callback.message.edit_text(
                 "Ваши сайты (нажмите, чтобы удалить):", reply_markup=keyboard
             )
+    except TelegramBadRequest as e:
+        logger.warning(f"Failed to edit message for list_sites: {e}")
+        await callback.message.answer(
+            "Не удалось обновить сообщение. Попробуйте позже.",
+            reply_markup=get_main_menu_keyboard(),
+        )
     except Exception as e:
         logger.error(f"Error listing sites for {callback.from_user.id}: {e}")
         await callback.message.answer(
-            "Не удалось получить список сайтов. Попробуйте позже."
+            "Не удалось получить список сайтов. Попробуйте позже.",
+            reply_markup=get_main_menu_keyboard(),
         )
     finally:
         await callback.answer()

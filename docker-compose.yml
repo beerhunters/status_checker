@@ -54,14 +54,14 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile.bot
-    command: celery -A bot.celery_app worker --loglevel=info
+    command: celery -A bot.celery_app worker --loglevel=info --pool=gevent
     user: "1000:1000"
     env_file: .env
     depends_on:
-        redis:
-            condition: service_healthy
-        db:
-            condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
 
   celery-beat:
     build:
