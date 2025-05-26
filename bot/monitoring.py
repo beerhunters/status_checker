@@ -36,13 +36,108 @@ def check_website_sync(url: str, retries: int = 3, delay: int = 2) -> bool:
     return False
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)  # Повтор через 60 секунд
-def check_single_site(self, site_id: int, url: str, user_id: int):
+# @shared_task(bind=True, max_retries=3, default_retry_delay=60)  # Повтор через 60 секунд
+# def check_single_site(self, site_id: int, url: str, user_id: int):
+#     """Задача Celery для проверки одного сайта."""
+#     logger.debug(f"Выполняется задача Celery для сайта ID={site_id}, URL={url}")
+#     with SyncSessionFactory() as session:
+#         try:
+#             # Используем .get() для загрузки по первичному ключу
+#             site = session.get(Site, site_id)
+#             if not site:
+#                 logger.warning(f"Сайт ID={site_id} не найден в задаче Celery.")
+#                 return
+#
+#             was_available = site.is_available
+#             is_available = check_website_sync(url)
+#             now = datetime.now(timezone.utc)  # Используем UTC
+#
+#             send_alert = False
+#             # Если статус изменился на "недоступен"
+#             if was_available and not is_available:
+#                 send_alert = True
+#                 site.last_notified = now
+#             # Если статус "недоступен" и прошло > 15 минут (или никогда не уведомляли)
+#             elif not is_available and (
+#                 site.last_notified is None
+#                 or (now - site.last_notified).total_seconds() > 900
+#             ):
+#                 send_alert = True
+#                 site.last_notified = now
+#
+#             # Обновляем статус и время проверки в любом случае
+#             site.is_available = is_available
+#             site.last_checked = now
+#             session.commit()  # Сохраняем изменения
+#
+#             if send_alert:
+#                 logger.info(
+#                     f"Сайт {url} (ID={site_id}) недоступен. Отправка уведомления пользователю {user_id}..."
+#                 )
+#                 from bot.bot_main import send_notification_sync
+#
+#                 send_notification_sync(
+#                     user_id, f"🚨 Внимание! Ваш сайт {url} недоступен!"
+#                 )
+#
+#         except requests.RequestException as exc:
+#             logger.warning(f"Сетевая ошибка при проверке {url}, повтор... ({exc})")
+#             raise self.retry(exc=exc)  # Celery выполнит повтор
+#         except Exception as e:
+#             logger.error(
+#                 f"Неожиданная ошибка обработки сайта {site_id}: {e}", exc_info=True
+#             )
+#             # Здесь можно решить, стоит ли повторять при других ошибках
+#             # raise self.retry(exc=e)
+#
+#
+# @shared_task
+# def run_monitoring_check():
+#     """Задача запуска мониторинга всех сайтов."""
+#     logger.info("Запуск периодической задачи run_monitoring_check...")
+#     with SyncSessionFactory() as session:
+#         try:
+#             # Выбираем только id, url и user_id, чтобы не загружать лишнего
+#             stmt = select(Site.id, Site.url, Site.user_id)
+#             sites = session.execute(stmt).fetchall()
+#             logger.info(f"Найдено {len(sites)} сайтов для проверки.")
+#
+#             for site_id, url, user_id in sites:
+#                 check_single_site.delay(site_id, url, user_id)
+#             logger.info("Задачи на проверку сайтов успешно поставлены в очередь.")
+#         except Exception as e:
+#             logger.error(
+#                 f"Ошибка при получении списка сайтов для мониторинга: {e}",
+#                 exc_info=True,
+#             )
+# bot/monitoring.py
+@shared_task
+def run_monitoring_check():
+    """Задача запуска мониторинга всех сайтов."""
+    logger.info("Запуск периодической задачи run_monitoring_check...")
+    with SyncSessionFactory() as session:
+        try:
+            stmt = select(Site.id, Site.url, User.telegram_id).join(
+                User, Site.user_id == User.id
+            )
+            sites = session.execute(stmt).fetchall()
+            logger.info(f"Найдено {len(sites)} сайтов для проверки.")
+            for site_id, url, telegram_id in sites:
+                check_single_site.delay(site_id, url, telegram_id)
+            logger.info("Задачи на проверку сайтов успешно поставлены в очередь.")
+        except Exception as e:
+            logger.error(
+                f"Ошибка при получении списка сайтов для мониторинга: {e}",
+                exc_info=True,
+            )
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def check_single_site(self, site_id: int, url: str, telegram_id: int):
     """Задача Celery для проверки одного сайта."""
     logger.debug(f"Выполняется задача Celery для сайта ID={site_id}, URL={url}")
     with SyncSessionFactory() as session:
         try:
-            # Используем .get() для загрузки по первичному ключу
             site = session.get(Site, site_id)
             if not site:
                 logger.warning(f"Сайт ID={site_id} не найден в задаче Celery.")
@@ -50,14 +145,12 @@ def check_single_site(self, site_id: int, url: str, user_id: int):
 
             was_available = site.is_available
             is_available = check_website_sync(url)
-            now = datetime.now(timezone.utc)  # Используем UTC
+            now = datetime.now(timezone.utc)
 
             send_alert = False
-            # Если статус изменился на "недоступен"
             if was_available and not is_available:
                 send_alert = True
                 site.last_notified = now
-            # Если статус "недоступен" и прошло > 15 минут (или никогда не уведомляли)
             elif not is_available and (
                 site.last_notified is None
                 or (now - site.last_notified).total_seconds() > 900
@@ -65,48 +158,24 @@ def check_single_site(self, site_id: int, url: str, user_id: int):
                 send_alert = True
                 site.last_notified = now
 
-            # Обновляем статус и время проверки в любом случае
             site.is_available = is_available
             site.last_checked = now
-            session.commit()  # Сохраняем изменения
+            session.commit()
 
             if send_alert:
                 logger.info(
-                    f"Сайт {url} (ID={site_id}) недоступен. Отправка уведомления пользователю {user_id}..."
+                    f"Сайт {url} (ID={site_id}) недоступен. Отправка уведомления пользователю {telegram_id}..."
                 )
                 from bot.bot_main import send_notification_sync
 
                 send_notification_sync(
-                    user_id, f"🚨 Внимание! Ваш сайт {url} недоступен!"
+                    telegram_id, f"🚨 Внимание! Ваш сайт {url} недоступен!"
                 )
 
         except requests.RequestException as exc:
             logger.warning(f"Сетевая ошибка при проверке {url}, повтор... ({exc})")
-            raise self.retry(exc=exc)  # Celery выполнит повтор
+            raise self.retry(exc=exc)
         except Exception as e:
             logger.error(
                 f"Неожиданная ошибка обработки сайта {site_id}: {e}", exc_info=True
-            )
-            # Здесь можно решить, стоит ли повторять при других ошибках
-            # raise self.retry(exc=e)
-
-
-@shared_task
-def run_monitoring_check():
-    """Задача запуска мониторинга всех сайтов."""
-    logger.info("Запуск периодической задачи run_monitoring_check...")
-    with SyncSessionFactory() as session:
-        try:
-            # Выбираем только id, url и user_id, чтобы не загружать лишнего
-            stmt = select(Site.id, Site.url, Site.user_id)
-            sites = session.execute(stmt).fetchall()
-            logger.info(f"Найдено {len(sites)} сайтов для проверки.")
-
-            for site_id, url, user_id in sites:
-                check_single_site.delay(site_id, url, user_id)
-            logger.info("Задачи на проверку сайтов успешно поставлены в очередь.")
-        except Exception as e:
-            logger.error(
-                f"Ошибка при получении списка сайтов для мониторинга: {e}",
-                exc_info=True,
             )

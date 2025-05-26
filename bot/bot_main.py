@@ -1,19 +1,20 @@
 # bot/bot_main.py
 import asyncio
+import requests
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramForbiddenError, TelegramAPIError
+from aiogram.exceptions import (
+    TelegramForbiddenError,
+    TelegramAPIError,
+    TelegramBadRequest,
+)
 
 from shared.config import settings
-from shared.db import (
-    init_db,
-    AsyncSessionFactory,
-    User,
-)  # Убедитесь, что User импортирован
+from shared.db import init_db, AsyncSessionFactory, User
 from shared.logger_setup import logger
 from bot.handlers import router as main_router
-from bot.celery_app import celery_app  # Импортируем, чтобы Celery знал о нем
+from bot.celery_app import celery_app
 
 # Создаем основной экземпляр бота
 bot = Bot(
@@ -21,62 +22,25 @@ bot = Bot(
 )
 
 
-async def send_notification(user_id: int, message_text: str):
-    """Асинхронно отправляет уведомление пользователю."""
-    try:
-        await bot.send_message(user_id, message_text)
-        logger.debug(f"Sent notification to {user_id}")
-    except TelegramForbiddenError:
-        logger.warning(
-            f"User {user_id} blocked the bot. Consider marking user as inactive."
-        )
-        # Здесь можно добавить логику для деактивации пользователя в БД
-        # async with AsyncSessionFactory() as session:
-        #     user = await session.query(User).filter(User.telegram_id == user_id).first()
-        #     if user:
-        #         user.is_active = False # Если добавите поле is_active
-        #         await session.commit()
-    except TelegramAPIError as e:
-        logger.error(f"Failed to send message to {user_id}: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error sending message to {user_id}: {e}")
-
-
 def send_notification_sync(user_id: int, message: str):
-    """
-    Отправляет уведомление синхронно (для Celery), используя asyncio.run.
-    Внимание: Создает новый экземпляр бота и запускает новый event loop.
-    Может быть неоптимально для высокой нагрузки.
-    """
+    """Отправляет уведомление синхронно через Telegram API с использованием requests."""
     logger.debug(f"Attempting to send sync notification to {user_id}")
-
-    async def _send():
-        # Создаем временный экземпляр бота
-        temp_bot = Bot(
-            token=settings.bot_token,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        )
-        try:
-            await temp_bot.send_message(user_id, message)
-            logger.info(f"Sync notification sent successfully to {user_id}")
-        except TelegramForbiddenError:
-            logger.warning(f"User {user_id} blocked the bot (sync).")
-        except TelegramAPIError as e:
-            logger.error(f"Failed to send sync message to {user_id}: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error sending sync message to {user_id}: {e}")
-        finally:
-            # Обязательно закрываем сессию временного бота
-            await temp_bot.session.close()
-
+    url = f"https://api.telegram.org/bot{settings.bot_token}/sendMessage"
+    payload = {"chat_id": user_id, "text": message, "parse_mode": "HTML"}
     try:
-        asyncio.run(_send())
-    except RuntimeError as e:
-        # Это может случиться, если eventlet создает конфликт с asyncio.run
-        logger.error(
-            f"Failed to run asyncio_run for sending message: {e}. "
-            f"Eventlet/Asyncio conflict? Consider using a queue."
-        )
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            logger.info(f"Sync notification sent successfully to {user_id}")
+        else:
+            logger.error(f"Failed to send sync message to {user_id}: {response.text}")
+            if "chat not found" in response.text.lower():
+                logger.warning(
+                    f"Chat with user {user_id} not found. User may not have started the bot."
+                )
+    except requests.RequestException as e:
+        logger.error(f"Failed to send sync message to {user_id}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error sending sync message to {user_id}: {e}")
 
 
 async def main() -> None:
