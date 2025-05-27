@@ -17,10 +17,9 @@ from shared.models import Site, User
 from shared.schemas import Site as SiteSchema
 from typing import List
 from sqlalchemy.future import select
-from shared.utils import check_website_sync, send_notification_sync
+from shared.utils import check_website_sync, send_notification_sync, publish_celery_task
 from shared.config import settings
 from datetime import datetime, timezone
-from bot.celery_app import celery_app  # Import to send task
 
 router = APIRouter()
 templates = Jinja2Templates(directory="web/templates")
@@ -148,8 +147,8 @@ async def update_settings(
             f"Updated check_interval_minutes to {check_interval_minutes} by {current_user}"
         )
         # Send task to update Celery Beat schedule
-        celery_app.send_task(
-            "bot.celery_app.update_check_interval", args=[check_interval_minutes]
+        publish_celery_task(
+            "bot.celery_app.update_check_interval", [check_interval_minutes]
         )
         logger.info(
             f"Sent task to update Celery Beat schedule to {check_interval_minutes} minutes"

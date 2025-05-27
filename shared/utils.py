@@ -1,6 +1,8 @@
 # shared/utils.py
 import requests
 import time
+import json
+import redis
 from shared.logger_setup import logger
 from shared.config import settings
 
@@ -49,3 +51,35 @@ def send_notification_sync(user_id: int, message: str) -> None:
         logger.error(f"Failed to send sync message to {user_id}: {e}")
     except Exception as e:
         logger.error(f"Unexpected error sending sync message to {user_id}: {e}")
+
+
+def publish_celery_task(task_name: str, args: list) -> None:
+    """Publishes a Celery task to Redis queue."""
+    try:
+        redis_client = redis.Redis(
+            host=settings.redis_host,
+            port=settings.redis_port,
+            db=0,
+            decode_responses=True,
+        )
+        task = {
+            "id": f"task-{int(time.time())}",  # Simple unique ID
+            "task": task_name,
+            "args": args,
+            "kwargs": {},
+            "retries": 0,
+            "eta": None,
+            "expires": None,
+        }
+        # Push to Celery's default queue (celery)
+        redis_client.lpush("celery", json.dumps(task))
+        logger.info(f"Published task {task_name} with args {args} to Redis queue")
+        redis_client.close()
+    except redis.RedisError as e:
+        logger.error(f"Failed to publish task {task_name} to Redis: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.error(
+            f"Unexpected error publishing task {task_name}: {e}", exc_info=True
+        )
+        raise

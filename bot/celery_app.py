@@ -11,7 +11,10 @@ celery_app = Celery(
     "website_monitor",
     broker=f"redis://{settings.redis_host}:{settings.redis_port}/0",
     backend=f"redis://{settings.redis_host}:{settings.redis_port}/1",
-    include=["bot.monitoring", "bot.celery_app"],  # Include this module for tasks
+    include=["bot.monitoring", "bot.celery_app"],
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=10,
+    broker_connection_retry_delay=3,
 )
 
 celery_app.conf.update(
@@ -55,7 +58,7 @@ def set_beat_schedule(check_interval_minutes: int):
 
 
 # Fetch initial check_interval_minutes from database
-check_interval_minutes = settings.check_interval_minutes  # Default fallback
+check_interval_minutes = settings.check_interval_minutes
 source = ".env"
 try:
     result = get_system_setting_sync("check_interval_minutes")
