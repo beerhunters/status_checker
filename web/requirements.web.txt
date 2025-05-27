@@ -11,3 +11,6 @@ passlib[bcrypt]
 aiohttp
 python-multipart
 requests
+eventlet==0.33.3  # Added for bot.celery_app dependency
+celery==5.2.7  # Added for bot.celery_app dependency
+redis==4.5.4  # Added for Celery communication

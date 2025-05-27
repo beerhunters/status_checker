@@ -2,6 +2,7 @@
 import requests
 import time
 from shared.logger_setup import logger
+from shared.config import settings
 
 
 def check_website_sync(
@@ -27,3 +28,24 @@ def check_website_sync(
                 time.sleep(delay)
     logger.warning(f"Site {url} unavailable after {retries} attempts.")
     return False
+
+
+def send_notification_sync(user_id: int, message: str) -> None:
+    """Sends a notification synchronously using requests."""
+    logger.debug(f"Attempting to send sync notification to {user_id}")
+    url = f"https://api.telegram.org/bot{settings.bot_token}/sendMessage"
+    payload = {"chat_id": user_id, "text": message, "parse_mode": "HTML"}
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code == 200:
+            logger.info(f"Sync notification sent successfully to {user_id}")
+        else:
+            logger.error(f"Failed to send sync message to {user_id}: {response.text}")
+            if "chat not found" in response.text.lower():
+                logger.warning(
+                    f"Chat with user {user_id} not found. User may not have started the bot."
+                )
+    except requests.RequestException as e:
+        logger.error(f"Failed to send sync message to {user_id}: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error sending sync message to {user_id}: {e}")

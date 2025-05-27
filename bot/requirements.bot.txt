@@ -9,3 +9,4 @@ redis
 python-dotenv
 pydantic-settings
 aiohttp
+eventlet==0.33.3  # Added for bot.celery_app dependency

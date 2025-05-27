@@ -45,3 +45,13 @@ class Site(Base):
 
     def __repr__(self):
         return f"<Site(id={self.id}, url='{self.url}', user_id={self.user_id}, available={self.is_available})>"
+
+
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+    id = Column(Integer, primary_key=True)
+    key = Column(String(50), unique=True, nullable=False)
+    value = Column(String, nullable=False)
+
+    def __repr__(self):
+        return f"<SystemSettings(key='{self.key}', value='{self.value}')>"

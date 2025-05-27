@@ -2,16 +2,14 @@
 from typing import List, Optional, Callable, TypeVar, Coroutine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, selectinload
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import func  # Добавляем для COUNT
-
-from shared.models import Base, User, Site
+from sqlalchemy import func
+from shared.models import Base, User, Site, SystemSettings
 from shared.config import settings
 from shared.logger_setup import logger
 
-# --- Asynchronous Setup ---
 logger.info("Creating async database engine...")
 async_engine = create_async_engine(settings.database_url_async, echo=False)
 AsyncSessionFactory = async_sessionmaker(
@@ -19,7 +17,6 @@ AsyncSessionFactory = async_sessionmaker(
 )
 logger.info("Async database engine and session factory created.")
 
-# --- Synchronous Setup (for Celery) ---
 logger.info("Creating sync database engine...")
 sync_engine = create_engine(
     settings.database_url_sync,
@@ -32,13 +29,50 @@ logger.info("Sync database engine and session factory created.")
 
 async def init_db():
     """Инициализирует схему БД."""
-    async with async_engine.begin() as conn:
-        logger.info("Initializing database schema...")
-        await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema initialized.")
+    try:
+        async with async_engine.begin() as conn:
+            logger.info("Initializing database schema...")
+            await conn.run_sync(Base.metadata.create_all)  # Create tables
+            logger.info("Database schema initialized.")
+        # Initialize default settings
+        async with AsyncSessionFactory() as session:
+            try:
+                stmt = select(SystemSettings).filter(
+                    SystemSettings.key == "check_interval_minutes"
+                )
+                result = await session.execute(stmt)
+                if not result.scalars().first():
+                    setting = SystemSettings(
+                        key="check_interval_minutes",
+                        value=str(settings.check_interval_minutes),
+                    )
+                    session.add(setting)
+                    await session.commit()
+                    logger.info(
+                        f"Initialized default check_interval_minutes={settings.check_interval_minutes}."
+                    )
+                else:
+                    logger.info(
+                        "check_interval_minutes already exists in system_settings."
+                    )
+            except SQLAlchemyError as e:
+                logger.error(
+                    f"Database error initializing default settings: {e}", exc_info=True
+                )
+                await session.rollback()
+                raise
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error initializing default settings: {e}",
+                    exc_info=True,
+                )
+                await session.rollback()
+                raise
+    except Exception as e:
+        logger.critical(f"Failed to initialize database: {e}", exc_info=True)
+        raise
 
 
-# --- Async Operations ---
 T = TypeVar("T")
 
 
@@ -61,7 +95,6 @@ async def run_async_db_operation(
             raise
 
 
-# --- Внутренние асинхронные функции ---
 async def _get_or_create_user(
     session: AsyncSession, telegram_id: int, username: Optional[str]
 ) -> User:
@@ -130,7 +163,6 @@ async def _delete_site_by_id(
 
 
 async def _get_all_users_admin(session: AsyncSession) -> List[dict]:
-    """Возвращает список всех пользователей с количеством их сайтов."""
     try:
         stmt = (
             select(
@@ -185,7 +217,69 @@ async def _get_user_by_id_admin(session: AsyncSession, user_id: int) -> Optional
     return result.scalars().first()
 
 
-# --- Публичные асинхронные функции ---
+async def _get_all_telegram_ids(session: AsyncSession) -> List[int]:
+    stmt = select(User.telegram_id)
+    result = await session.execute(stmt)
+    return [row for row in result.scalars().all()]
+
+
+async def _get_system_setting(session: AsyncSession, key: str) -> Optional[int]:
+    """Fetches a system setting by key."""
+    try:
+        stmt = select(SystemSettings).filter(SystemSettings.key == key)
+        result = await session.execute(stmt)
+        setting = result.scalars().first()
+        return int(setting.value) if setting else None
+    except Exception as e:
+        logger.error(f"Error fetching system setting {key}: {e}", exc_info=True)
+        return None
+
+
+def get_system_setting_sync(key: str) -> Optional[int]:
+    """Synchronously fetches a system setting by key."""
+    try:
+        with SyncSessionFactory() as session:
+            logger.debug(f"Querying system_settings for key: {key}")
+            stmt = select(SystemSettings).filter(SystemSettings.key == key)
+            result = session.execute(stmt)
+            setting = result.scalars().first()
+            if setting:
+                logger.debug(f"Found setting: key={setting.key}, value={setting.value}")
+                try:
+                    return int(setting.value)
+                except ValueError as ve:
+                    logger.error(
+                        f"Invalid integer value for {key}: {setting.value}",
+                        exc_info=True,
+                    )
+                    return None
+            else:
+                logger.warning(f"No setting found for key: {key}")
+                return None
+    except Exception as e:
+        logger.error(
+            f"Error fetching system setting {key} synchronously: {e}", exc_info=True
+        )
+        return None
+
+
+async def _set_system_setting(session: AsyncSession, key: str, value: int) -> None:
+    """Sets or updates a system setting."""
+    try:
+        stmt = select(SystemSettings).filter(SystemSettings.key == key)
+        result = await session.execute(stmt)
+        setting = result.scalars().first()
+        if setting:
+            setting.value = str(value)
+        else:
+            setting = SystemSettings(key=key, value=str(value))
+            session.add(setting)
+        await session.flush()
+    except Exception as e:
+        logger.error(f"Error setting system setting {key}: {e}", exc_info=True)
+        raise
+
+
 async def get_or_create_user(telegram_id: int, username: Optional[str]) -> User:
     return await run_async_db_operation(_get_or_create_user, telegram_id, username)
 
@@ -216,3 +310,15 @@ async def delete_site_admin(site_id: int) -> Optional[int]:
 
 async def get_user_by_id_admin(user_id: int) -> Optional[User]:
     return await run_async_db_operation(_get_user_by_id_admin, user_id)
+
+
+async def get_all_telegram_ids() -> List[int]:
+    return await run_async_db_operation(_get_all_telegram_ids)
+
+
+async def get_system_setting(key: str) -> Optional[int]:
+    return await run_async_db_operation(_get_system_setting, key)
+
+
+async def set_system_setting(key: str, value: int) -> None:
+    await run_async_db_operation(_set_system_setting, key, value)

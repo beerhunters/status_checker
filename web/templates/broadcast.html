@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Рассылка - Админ-панель{% endblock %}
+{% block content %}
+<h1>Рассылка</h1>
+{% if message %}
+    <div class="alert alert-success" role="alert">
+        {{ message }}
+    </div>
+{% endif %}
+{% if error %}
+    <div class="alert alert-danger" role="alert">
+        {{ error }}
+    </div>
+{% endif %}
+<form method="post" action="/broadcast">
+    <div class="mb-3">
+        <label for="broadcast_message" class="form-label">Сообщение для рассылки</label>
+        <textarea class="form-control" id="broadcast_message" name="broadcast_message" rows="5" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary" onclick="return confirm('Вы уверены, что хотите отправить это сообщение всем пользователям?');">Отправить</button>
+</form>
+{% endblock %}

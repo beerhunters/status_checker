@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Настройки - Админ-панель{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+{% if message %}
+    <div class="alert alert-success" role="alert">
+        {{ message }}
+    </div>
+{% endif %}
+{% if error %}
+    <div class="alert alert-danger" role="alert">
+        {{ error }}
+    </div>
+{% endif %}
+<form method="post" action="/settings">
+    <div class="mb-3">
+        <label for="check_interval_minutes" class="form-label">Интервал проверки сайтов (минуты)</label>
+        <input type="number" class="form-control" id="check_interval_minutes" name="check_interval_minutes" value="{{ check_interval_minutes }}" min="1" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Сохранить</button>
+</form>
+{% endblock %}

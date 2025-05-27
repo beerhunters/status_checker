@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Панель управления - Админ-панель{% endblock %}
+{% block content %}
+<h1>Панель управления</h1>
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Добро пожаловать, {{ current_user }}!</h5>
+        <p class="card-text">Это админ-панель мониторинга сайтов. Используйте навигацию выше для управления пользователями, настройками и рассылкой уведомлений.</p>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-4">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Пользователи</h5>
+                <p class="card-text">Всего пользователей: {{ user_count }}</p>
+                <a href="/users" class="btn btn-light">Перейти</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-secondary mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Настройки</h5>
+                <p class="card-text">Настройте интервал проверки сайтов.</p>
+                <a href="/settings" class="btn btn-light">Перейти</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-info mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Рассылка</h5>
+                <p class="card-text">Отправьте сообщение всем пользователям.</p>
+                <a href="/broadcast" class="btn btn-light">Перейти</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
