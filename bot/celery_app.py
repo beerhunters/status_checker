@@ -1,5 +1,3 @@
-# bot/celery_app.py
-import bot.patch_eventlet  # Must be first import
 from celery import Celery
 from shared.config import settings
 from shared.logger_setup import logger
@@ -13,8 +11,8 @@ celery_app = Celery(
     backend=f"redis://{settings.redis_host}:{settings.redis_port}/1",
     include=["bot.monitoring", "bot.celery_app"],
     broker_connection_retry_on_startup=True,
-    broker_connection_max_retries=10,
-    broker_connection_retry_delay=3,
+    broker_connection_max_retries=15,
+    broker_connection_retry_delay=5,
 )
 
 celery_app.conf.update(
@@ -26,7 +24,7 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=300,
     task_soft_time_limit=270,
-    worker_concurrency=20,
+    worker_concurrency=8,
     broker_connection_retry_on_startup=True,
     worker_log_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     task_log_format="%(asctime)s - %(name)s - %(levelname)s - Task %(task_name)s[%(task_id)s]: %(message)s",
@@ -42,6 +40,11 @@ def set_beat_schedule(check_interval_minutes: int):
     global current_check_interval_minutes
     if check_interval_minutes == current_check_interval_minutes:
         logger.debug(f"No change in check_interval_minutes: {check_interval_minutes}")
+        return
+    if check_interval_minutes < 1:
+        logger.error(
+            f"Invalid check_interval_minutes: {check_interval_minutes}. Must be >= 1"
+        )
         return
     check_interval = timedelta(minutes=check_interval_minutes)
     celery_app.conf.beat_schedule = {

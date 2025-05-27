@@ -41,7 +41,7 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: ${DEBUG_LEVEL:-INFO}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DB_HOST: db
       REDIS_HOST: redis
     depends_on:
@@ -57,12 +57,12 @@ services:
       context: .
       dockerfile: bot/Dockerfile.bot
     container_name: monitoring_celery_worker
-    command: sh -c "sleep 10 && celery -A bot.celery_app:celery_app worker --loglevel=info --concurrency=10 --pool=eventlet"
+    command: sh -c "sleep 15 && redis-cli -h redis ping && celery -A bot.celery_app:celery_app worker --loglevel=info --concurrency=8 --pool=prefork"
     env_file:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: DEBUG
       DB_HOST: db
       REDIS_HOST: redis
     depends_on:
@@ -72,8 +72,6 @@ services:
         condition: service_healthy
       bot:
         condition: service_started
-    dns:
-      - 127.0.0.11  # Docker's internal DNS
     restart: always
     networks:
       - monitoring-network
@@ -82,12 +80,12 @@ services:
       context: .
       dockerfile: bot/Dockerfile.bot
     container_name: monitoring_celery_beat
-    command: sh -c "sleep 10 && celery -A bot.celery_app:celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler --pidfile=/tmp/celerybeat.pid"
+    command: sh -c "sleep 15 && redis-cli -h redis ping && celery -A bot.celery_app:celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler --pidfile=/tmp/celerybeat.pid"
     env_file:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: DEBUG
       DB_HOST: db
       REDIS_HOST: redis
     depends_on:
@@ -97,8 +95,6 @@ services:
         condition: service_healthy
       bot:
         condition: service_started
-    dns:
-      - 127.0.0.11  # Docker's internal DNS
     restart: always
     networks:
       - monitoring-network

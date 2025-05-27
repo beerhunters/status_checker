@@ -1,4 +1,3 @@
-# web/routers.py
 from fastapi import APIRouter, Request, HTTPException, status, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -30,7 +29,6 @@ templates.env.filters["datetimeformat"] = lambda dt: (
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, current_user: str = Depends(login_required)):
-    """Displays the dashboard."""
     request.state.user = current_user
     async with AsyncSessionFactory() as session:
         result = await session.execute(select(User))
@@ -43,7 +41,6 @@ async def dashboard(request: Request, current_user: str = Depends(login_required
 
 @router.get("/users", response_class=HTMLResponse)
 async def get_users_page(request: Request, user: str = Depends(login_required)):
-    """Displays the list of users."""
     request.state.user = user
     users = await get_all_users_admin()
     return templates.TemplateResponse(
@@ -55,7 +52,6 @@ async def get_users_page(request: Request, user: str = Depends(login_required)):
 async def get_user_sites_page(
     request: Request, user_id: int, current_user: str = Depends(login_required)
 ):
-    """Displays sites for a specific user."""
     request.state.user = current_user
     user = await get_user_by_id_admin(user_id)
     if not user:
@@ -69,7 +65,6 @@ async def get_user_sites_page(
 
 @router.post("/sites/delete/{site_id}")
 async def delete_site(site_id: int, current_user: str = Depends(login_required)):
-    """Deletes a site (admin only)."""
     logger.info(f"Admin '{current_user}' attempting to delete site ID {site_id}")
     user_id = await delete_site_admin(site_id)
     if user_id is None:
@@ -81,7 +76,6 @@ async def delete_site(site_id: int, current_user: str = Depends(login_required))
 
 @router.post("/sites/{site_id}/refresh")
 async def refresh_site(site_id: int, current_user: str = Depends(login_required)):
-    """Refreshes a site's status (admin only)."""
     logger.info(f"Admin '{current_user}' attempting to refresh site ID {site_id}")
     async with AsyncSessionFactory() as session:
         try:
@@ -105,7 +99,6 @@ async def refresh_site(site_id: int, current_user: str = Depends(login_required)
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, current_user: str = Depends(login_required)):
-    """Displays the settings page."""
     request.state.user = current_user
     check_interval = await get_system_setting("check_interval_minutes")
     check_interval_minutes = (
@@ -129,7 +122,6 @@ async def update_settings(
     check_interval_minutes: int = Form(...),
     current_user: str = Depends(login_required),
 ):
-    """Updates system settings."""
     try:
         if check_interval_minutes < 1:
             return templates.TemplateResponse(
@@ -147,17 +139,24 @@ async def update_settings(
             f"Updated check_interval_minutes to {check_interval_minutes} by {current_user}"
         )
         # Send task to update Celery Beat schedule
-        publish_celery_task(
+        success = publish_celery_task(
             "bot.celery_app.update_check_interval", [check_interval_minutes]
         )
-        logger.info(
-            f"Sent task to update Celery Beat schedule to {check_interval_minutes} minutes"
-        )
+        if success:
+            logger.info(
+                f"Sent task to update Celery Beat schedule to {check_interval_minutes} minutes"
+            )
+            message = f"Настройки успешно обновлены. Новый интервал ({check_interval_minutes} мин) применен."
+        else:
+            logger.warning(
+                f"Failed to send task to update Celery Beat schedule to {check_interval_minutes} minutes"
+            )
+            message = f"Интервал ({check_interval_minutes} мин) сохранен в базе данных, но не удалось отправить задачу для обновления расписания. Попробуйте позже."
         return templates.TemplateResponse(
             "settings.html",
             {
                 "request": request,
-                "message": f"Настройки успешно обновлены. Новый интервал ({check_interval_minutes} мин) применен.",
+                "message": message,
                 "check_interval_minutes": check_interval_minutes,
                 "current_user": current_user,
             },
@@ -178,7 +177,6 @@ async def update_settings(
 
 @router.get("/broadcast", response_class=HTMLResponse)
 async def broadcast_page(request: Request, current_user: str = Depends(login_required)):
-    """Displays the broadcast page."""
     request.state.user = current_user
     return templates.TemplateResponse(
         "broadcast.html", {"request": request, "current_user": current_user}
@@ -191,7 +189,6 @@ async def send_broadcast(
     broadcast_message: str = Form(...),
     current_user: str = Depends(login_required),
 ):
-    """Sends a broadcast message to all users."""
     try:
         async with AsyncSessionFactory() as session:
             result = await session.execute(select(User.telegram_id))
@@ -232,7 +229,6 @@ async def send_broadcast(
 
 @router.get("/api/users/{user_id}/sites", response_model=List[SiteSchema])
 async def get_user_sites_api(user_id: int, current_user: str = Depends(login_required)):
-    """Gets a user's sites in JSON format."""
     logger.info(f"Admin '{current_user}' requesting sites for user ID {user_id}")
     user = await get_user_by_id_admin(user_id)
     if not user:

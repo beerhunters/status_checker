@@ -7,6 +7,11 @@ WORKDIR /app
 # Устанавливаем переменную окружения, чтобы Python находил модули
 ENV PYTHONPATH=/app
 
+# Устанавливаем зависимости системы
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    redis-tools \
+    && rm -rf /var/lib/apt/lists/*
+
 # Обновляем pip и устанавливаем зависимости
 COPY bot/requirements.bot.txt .
 RUN pip install --no-cache-dir --upgrade pip && \

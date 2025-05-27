@@ -1,16 +1,15 @@
-# shared/utils.py
 import requests
 import time
 import json
 import redis
 from shared.logger_setup import logger
 from shared.config import settings
+from redis.exceptions import ConnectionError, TimeoutError
 
 
 def check_website_sync(
     url: str, retries: int = 3, delay: int = 2, timeout: int = 10
 ) -> bool:
-    """Checks website availability synchronously with retries."""
     logger.debug(f"Starting synchronous check for site: {url}")
     headers = {"User-Agent": "WebsiteMonitorBot/1.0 (Sync Check)"}
     for attempt in range(retries):
@@ -33,7 +32,6 @@ def check_website_sync(
 
 
 def send_notification_sync(user_id: int, message: str) -> None:
-    """Sends a notification synchronously using requests."""
     logger.debug(f"Attempting to send sync notification to {user_id}")
     url = f"https://api.telegram.org/bot{settings.bot_token}/sendMessage"
     payload = {"chat_id": user_id, "text": message, "parse_mode": "HTML"}
@@ -53,33 +51,48 @@ def send_notification_sync(user_id: int, message: str) -> None:
         logger.error(f"Unexpected error sending sync message to {user_id}: {e}")
 
 
-def publish_celery_task(task_name: str, args: list) -> None:
-    """Publishes a Celery task to Redis queue."""
-    try:
-        redis_client = redis.Redis(
-            host=settings.redis_host,
-            port=settings.redis_port,
-            db=0,
-            decode_responses=True,
-        )
-        task = {
-            "id": f"task-{int(time.time())}",  # Simple unique ID
-            "task": task_name,
-            "args": args,
-            "kwargs": {},
-            "retries": 0,
-            "eta": None,
-            "expires": None,
-        }
-        # Push to Celery's default queue (celery)
-        redis_client.lpush("celery", json.dumps(task))
-        logger.info(f"Published task {task_name} with args {args} to Redis queue")
-        redis_client.close()
-    except redis.RedisError as e:
-        logger.error(f"Failed to publish task {task_name} to Redis: {e}", exc_info=True)
-        raise
-    except Exception as e:
-        logger.error(
-            f"Unexpected error publishing task {task_name}: {e}", exc_info=True
-        )
-        raise
+def publish_celery_task(
+    task_name: str, args: list, retries: int = 3, delay: int = 5
+) -> bool:
+    """Publishes a Celery task to Redis queue with retries."""
+    for attempt in range(retries):
+        try:
+            redis_client = redis.Redis(
+                host=settings.redis_host,
+                port=settings.redis_port,
+                db=0,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+            )
+            # Test connection
+            redis_client.ping()
+            task = {
+                "id": f"task-{int(time.time())}",
+                "task": task_name,
+                "args": args,
+                "kwargs": {},
+                "retries": 0,
+                "eta": None,
+                "expires": None,
+            }
+            redis_client.lpush("celery", json.dumps(task))
+            logger.info(f"Published task {task_name} with args {args} to Redis queue")
+            redis_client.close()
+            return True
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(
+                f"Failed to publish task {task_name} to Redis (attempt {attempt + 1}): {e}"
+            )
+            if attempt < retries - 1:
+                time.sleep(delay)
+        except redis.RedisError as e:
+            logger.error(f"Redis error publishing task {task_name}: {e}", exc_info=True)
+            break
+        except Exception as e:
+            logger.error(
+                f"Unexpected error publishing task {task_name}: {e}", exc_info=True
+            )
+            break
+    logger.error(f"Failed to publish task {task_name} after {retries} attempts")
+    return False

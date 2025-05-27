@@ -1,5 +1,4 @@
 # bot/monitoring.py
-import bot.patch_eventlet  # Must be first import
 import time
 from celery import shared_task
 from sqlalchemy.orm import Session
