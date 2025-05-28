@@ -1,30 +1,26 @@
 # bot/monitoring.py
-import asyncio
-from typing import List, Optional
-from shared.db import (
-    AsyncSessionFactory,
-    get_all_telegram_ids,  # Заменено
-    get_user_sites,
-    update_site_status,
-    get_user_by_id,
-)
 from shared.models import Site, User
 from shared.utils import check_website_sync, send_notification_sync
 from shared.config import settings
 from shared.logger_setup import logger
-from bot.celery_app import celery_app  # Исправленный импорт
+from bot.celery_app import celery_app
+from sqlalchemy import update, func
+from sqlalchemy.future import select
 
 
-async def check_single_site(site: Site, user: User) -> bool:
+def check_single_site_sync(site: Site, user: User) -> bool:
     logger.debug(f"Checking site: {site.url} for user: {user.telegram_id}")
     is_available = check_website_sync(site.url)
-    async with AsyncSessionFactory() as session:
-        await update_site_status(
-            session,
-            site_id=site.id,
-            is_available=is_available,
-            user_id=user.telegram_id,
+    from sqlalchemy.orm import Session
+    from shared.db import SyncSessionFactory
+
+    with SyncSessionFactory() as session:
+        session.execute(
+            update(Site)
+            .where(Site.id == site.id, Site.user_id == user.id)
+            .values(is_available=is_available, last_checked=func.now())
         )
+        session.commit()
     if site.is_available != is_available:
         status_text = "доступен" if is_available else "недоступен"
         message = (
@@ -34,28 +30,45 @@ async def check_single_site(site: Site, user: User) -> bool:
     return is_available
 
 
-async def check_all_sites():
+def check_all_sites_sync():
     logger.debug("Starting check for all sites...")
-    async with AsyncSessionFactory() as session:
-        user_ids = await get_all_telegram_ids(session)  # Заменено
+    from sqlalchemy.orm import Session
+    from shared.db import SyncSessionFactory
+
+    with SyncSessionFactory() as session:
+        stmt = select(User.telegram_id)
+        result = session.execute(stmt)
+        user_ids = [row for row in result.scalars().all()]
+    if not user_ids:
+        logger.info("No users found for monitoring")
+        return
+    with SyncSessionFactory() as session:
         for user_id in user_ids:
-            user = await get_user_by_id(session, user_id)
+            stmt = select(User).filter(User.telegram_id == user_id)
+            result = session.execute(stmt)
+            user = result.scalars().first()
             if not user:
                 logger.warning(f"User {user_id} not found, skipping.")
                 continue
-            sites = await get_user_sites(session, user_id)
-            tasks = [check_single_site(site, user) for site in sites]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for site, result in zip(sites, results):
-                if isinstance(result, Exception):
-                    logger.error(
-                        f"Error checking site {site.url} for user {user_id}: {result}",
-                        exc_info=True,
-                    )
-                else:
+            stmt = (
+                select(Site)
+                .join(User)
+                .filter(User.telegram_id == user_id)
+                .order_by(Site.id)
+            )
+            result = session.execute(stmt)
+            sites = result.scalars().all()
+            for site in sites:
+                try:
+                    is_available = check_single_site_sync(site, user)
                     logger.debug(
                         f"Site {site.url} for user {user_id} is "
-                        f"{'available' if result else 'unavailable'}"
+                        f"{'available' if is_available else 'unavailable'}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error checking site {site.url} for user {user_id}: {e}",
+                        exc_info=True,
                     )
 
 
@@ -63,6 +76,8 @@ async def check_all_sites():
 def run_monitoring_check():
     logger.info("Running scheduled monitoring check...")
     try:
-        asyncio.run(check_all_sites())
+        check_all_sites_sync()
+        logger.info("Completed scheduled monitoring check")
     except Exception as e:
         logger.error(f"Error in run_monitoring_check: {e}", exc_info=True)
+        raise

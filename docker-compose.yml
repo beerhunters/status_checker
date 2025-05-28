@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   db:
     image: postgres:14-alpine
@@ -57,7 +56,7 @@ services:
       context: .
       dockerfile: bot/Dockerfile.bot
     container_name: monitoring_celery_worker
-    command: sh -c "sleep 15 && redis-cli -h redis ping && celery -A bot.celery_app:celery_app worker --loglevel=info --concurrency=8 --pool=prefork"
+    command: sh -c "sleep 15 && redis-cli -h redis ping && celery -A bot.celery_app:celery_app worker --loglevel=info --concurrency=8 --pool=solo"
     env_file:
       - .env
     environment:
