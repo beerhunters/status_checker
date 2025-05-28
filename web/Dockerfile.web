@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Копируем общие модули и код веба
 COPY shared/ /app/shared/
 COPY web/ /app/web/
+COPY bot/ /app/bot/
 
 RUN useradd -m -u 1001 webuser && \
     chown -R webuser:webuser /app

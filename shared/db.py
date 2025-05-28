@@ -1,11 +1,10 @@
 # shared/db.py
 from typing import List, Optional, Callable, TypeVar, Coroutine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import func
 from shared.models import Base, User, Site, SystemSettings
 from shared.config import settings
 from shared.logger_setup import logger
@@ -217,6 +216,22 @@ async def _get_user_by_id_admin(session: AsyncSession, user_id: int) -> Optional
     return result.scalars().first()
 
 
+async def _get_user_by_id(session: AsyncSession, telegram_id: int) -> Optional[User]:
+    """Fetches a user by telegram_id."""
+    try:
+        logger.debug(f"Querying user with telegram_id: {telegram_id}")
+        stmt = select(User).filter(User.telegram_id == telegram_id)
+        result = await session.execute(stmt)
+        user = result.scalars().first()
+        logger.debug(f"User query result: {'found' if user else 'not found'}")
+        return user
+    except Exception as e:
+        logger.error(
+            f"Error fetching user by telegram_id {telegram_id}: {e}", exc_info=True
+        )
+        return None
+
+
 async def _get_all_telegram_ids(session: AsyncSession) -> List[int]:
     stmt = select(User.telegram_id)
     result = await session.execute(stmt)
@@ -233,6 +248,26 @@ async def _get_system_setting(session: AsyncSession, key: str) -> Optional[int]:
     except Exception as e:
         logger.error(f"Error fetching system setting {key}: {e}", exc_info=True)
         return None
+
+
+async def _update_site_status(
+    session: AsyncSession, site_id: int, is_available: bool, user_id: int
+) -> None:
+    """Updates the status and last_checked timestamp of a site."""
+    try:
+        logger.debug(f"Updating status for site_id: {site_id}, user_id: {user_id}")
+        await session.execute(
+            update(Site)
+            .where(Site.id == site_id, Site.user_id == user_id)
+            .values(is_available=is_available, last_checked=func.now())
+        )
+        await session.flush()
+        logger.debug(f"Site status updated for site_id: {site_id}")
+    except Exception as e:
+        logger.error(
+            f"Error updating site status for site_id {site_id}: {e}", exc_info=True
+        )
+        raise
 
 
 def get_system_setting_sync(key: str) -> Optional[int]:
@@ -312,12 +347,24 @@ async def get_user_by_id_admin(user_id: int) -> Optional[User]:
     return await run_async_db_operation(_get_user_by_id_admin, user_id)
 
 
+async def get_user_by_id(telegram_id: int) -> Optional[User]:
+    return await run_async_db_operation(_get_user_by_id, telegram_id)
+
+
 async def get_all_telegram_ids() -> List[int]:
     return await run_async_db_operation(_get_all_telegram_ids)
 
 
 async def get_system_setting(key: str) -> Optional[int]:
     return await run_async_db_operation(_get_system_setting, key)
+
+
+async def update_site_status(
+    session: AsyncSession, site_id: int, is_available: bool, user_id: int
+) -> None:
+    await run_async_db_operation(
+        _update_site_status, site_id=site_id, is_available=is_available, user_id=user_id
+    )
 
 
 async def set_system_setting(key: str, value: int) -> None:
