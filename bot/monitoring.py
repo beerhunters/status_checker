@@ -6,6 +6,7 @@ from shared.logger_setup import logger
 from bot.celery_app import celery_app
 from sqlalchemy import update, func
 from sqlalchemy.future import select
+from celery import shared_task
 
 
 def check_single_site_sync(site: Site, user: User) -> bool:
@@ -72,6 +73,7 @@ def check_all_sites_sync():
                     )
 
 
+@shared_task
 @celery_app.task
 def run_monitoring_check():
     logger.info("Running scheduled monitoring check...")

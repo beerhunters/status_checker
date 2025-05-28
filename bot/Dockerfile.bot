@@ -1,33 +1,26 @@
 # bot/Dockerfile.bot
 FROM python:3.10-slim
 
-# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Устанавливаем переменную окружения, чтобы Python находил модули
 ENV PYTHONPATH=/app
 
-# Устанавливаем зависимости системы
 RUN apt-get update && apt-get install -y --no-install-recommends \
     redis-tools \
+    libgdbm-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Обновляем pip и устанавливаем зависимости
 COPY bot/requirements.bot.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.bot.txt
 
-# Копируем общие модули и код бота
-# Сначала копируем shared, потом bot
 COPY shared/ /app/shared/
 COPY bot/ /app/bot/
 
-# Создаем непривилегированного пользователя и передаем ему права
 RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/celery_data && \
     chown -R appuser:appuser /app
 
-# Переключаемся на непривилегированного пользователя
 USER appuser
 
-# Команда для запуска бота
 CMD ["python", "-m", "bot.bot_main"]
