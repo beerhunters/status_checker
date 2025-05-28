@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     db_name: str = Field("monitoring_bot", env="DB_NAME")
     redis_host: str = Field("redis", env="REDIS_HOST")
     redis_port: int = Field(6379, env="REDIS_PORT")
+    redis_db: int = 0
     check_interval_minutes: int = Field(5, env="CHECK_INTERVAL_MINUTES")
     admin_username: str = Field("admin", env="ADMIN_USERNAME")
     admin_password: str = Field("strongpassword", env="ADMIN_PASSWORD")
@@ -38,6 +39,10 @@ class Settings(BaseSettings):
     def database_url_sync(self) -> str:
         """Синхронный URL для SQLAlchemy (psycopg2)."""
         return f"postgresql+psycopg2://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     class Config:
         env_file = ".env"

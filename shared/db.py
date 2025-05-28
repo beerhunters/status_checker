@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, update, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.exc import SQLAlchemyError
+from psycopg2.errors import UndefinedTable  # Импортируем для обработки ошибки
 from shared.models import Base, User, Site, SystemSettings
 from shared.config import settings
 from shared.logger_setup import logger
@@ -291,9 +292,20 @@ def get_system_setting_sync(key: str) -> Optional[int]:
             else:
                 logger.warning(f"No setting found for key: {key}")
                 return None
-    except Exception as e:
+    except SQLAlchemyError as e:
+        if isinstance(e.__cause__, UndefinedTable):
+            logger.warning(
+                f"Table 'system_settings' does not exist yet for key: {key}. Likely database not initialized."
+            )
+            return None
         logger.error(
             f"Error fetching system setting {key} synchronously: {e}", exc_info=True
+        )
+        return None
+    except Exception as e:
+        logger.error(
+            f"Unexpected error fetching system setting {key} synchronously: {e}",
+            exc_info=True,
         )
         return None
 
