@@ -3,9 +3,7 @@ sqlalchemy>=2.0
 psycopg2-binary
 asyncpg
 requests
-# celery>=5.5.2
 eventlet
-# redis>=5.0.1  # Добавлено
 python-dotenv
 pydantic-settings
 aiohttp
