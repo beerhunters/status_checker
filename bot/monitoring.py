@@ -24,9 +24,8 @@ def check_single_site_sync(site: Site, user: User) -> bool:
         session.commit()
     if site.is_available != is_available:
         status_text = "доступен" if is_available else "недоступен"
-        message = (
-            f"Статус сайта <b>{site.url}</b> изменился: теперь <b>{status_text}</b>."
-        )
+        status_tag = "✅" if is_available else "❌"
+        message = f"{status_tag} Статус сайта <b>{site.url}</b> изменился: теперь <b>{status_text}</b>."
         send_notification_sync(user.telegram_id, message)
     return is_available
 

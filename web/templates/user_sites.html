@@ -40,7 +40,7 @@
                                     Обновить статус
                                 </button>
                             </form>
-                            <form action="/sites/{{ site.id }}/delete" method="post" style="display:inline;">
+                            <form action="/sites/delete/{{ site.id }}" method="post" style="display:inline;">
                                 <button type="submit" class="btn btn-danger btn-sm"
                                     onclick="return confirm('Действительно удалить сайт?');">
                                     Удалить
