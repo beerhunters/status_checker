@@ -74,7 +74,8 @@ class Settings(BaseSettings):
     check_interval_minutes: int = Field(5, env="CHECK_INTERVAL_MINUTES")
     admin_username: str = Field("admin", env="ADMIN_USERNAME")
     admin_password: str = Field("strongpassword", env="ADMIN_PASSWORD")
-    admin_chat_id: int = Field(..., env="ADMIN_CHAT_ID")  # Добавлено
+    # admin_chat_id: int = Field(..., env="ADMIN_CHAT_ID")  # Добавлено
+    admin_chat_id: int = Field(..., env="FOR_LOGS")  # Добавлено
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         "INFO", env="LOG_LEVEL"
     )
