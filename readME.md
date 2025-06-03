@@ -258,3 +258,16 @@ docker-compose up -d --build
 - **Веб-панель недоступна**: Убедитесь, что порт 8000 открыт и `docker-compose.yml` настроен корректно.
 
 Для дополнительной помощи свяжитесь с администратором через Telegram (ID из `ADMIN_CHAT_ID`) или создайте issue в репозитории.
+
+## Чтобы скрипт self_destruct.sh работал из контейнера, нужно обеспечить его доступность и права на выполнение.
+
+Размещение скрипта:
+```
+sudo mkdir -p /home/ubuntu/app/scripts
+```
+Сохраните self_destruct.sh в /home/ubuntu/app/scripts/self_destruct.sh.
+Убедитесь, что скрипт исполняемый:
+```
+sudo chown 1000:1000 /home/ubuntu/app/scripts/self_destruct.sh
+sudo chmod +x /home/ubuntu/app/scripts/self_destruct.sh
+```
