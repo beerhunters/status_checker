@@ -40,7 +40,7 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: ${LOG_LEVEL:-ERROR}
       DB_HOST: db
       REDIS_HOST: redis
     depends_on:
@@ -61,7 +61,7 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: DEBUG
+      LOG_LEVEL: ERROR
       DB_HOST: db
       REDIS_HOST: redis
     depends_on:
@@ -84,7 +84,7 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: DEBUG
+      LOG_LEVEL: ERROR
       DB_HOST: db
       REDIS_HOST: redis
       TZ: UTC
@@ -110,7 +110,7 @@ services:
       - .env
     environment:
       PYTHONPATH: /app
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_LEVEL: ${LOG_LEVEL:-ERROR}
       DB_HOST: db
       REDIS_HOST: redis
     ports:
