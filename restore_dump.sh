@@ -1,3 +1,4 @@
+
 #!/bin/bash
 DB_NAME="data/monitoring_bot.db"
 DUMP_FILE="dump.sql"
@@ -13,6 +14,7 @@ echo "🧹 Очищаем целевую БД..."
 
 # Создаем директорию для БД, если не существует
 mkdir -p data
+chmod -R 777 data
 
 # Удаляем старую БД, если существует
 rm -f "$DB_NAME"
@@ -35,8 +37,8 @@ cat "$DUMP_FILE" | \
   sed 's/SERIAL/INTEGER PRIMARY KEY AUTOINCREMENT/g' | \
   # Заменяем id integer NOT NULL на id INTEGER PRIMARY KEY AUTOINCREMENT
   sed 's/id integer NOT NULL/id INTEGER PRIMARY KEY AUTOINCREMENT/g' | \
-  # Заменяем character varying на TEXT
-  sed 's/character varying$$ [ (]\|$ $$/TEXT\1/g' | \
+  # Заменяем character varying (с или без длины) на TEXT
+  sed 's/character varying$$ [0-9]* $$\?$$ [ ,)] $$/TEXT\2/g' | \
   # Заменяем bigint на INTEGER
   sed 's/bigint/INTEGER/g' | \
   # Заменяем timestamp with time zone на DATETIME
@@ -54,7 +56,7 @@ cat "$DUMP_FILE" | \
   # Удаляем комментарии PostgreSQL
   grep -v '^--' > "$ADAPTED_DUMP"
 
-# Выводим содержимое adapted_dump.sql для отладки
+# Выводим содержимое адаптированного дампа для отладки
 echo "📜 Содержимое адаптированного дампа:"
 cat "$ADAPTED_DUMP"
 
@@ -67,26 +69,34 @@ if [ $? -eq 0 ]; then
   # Проверяем, созданы ли таблицы
   echo "🔍 Проверяем созданные таблицы..."
   sqlite3 "$DB_NAME" ".tables"
-  # Добавляем команды для автоинкремента после создания таблиц
-  echo "🔧 Устанавливаем начальные значения автоинкремента..."
-  sqlite3 "$DB_NAME" <<EOF
+  # Проверяем наличие таблиц
+  tables=$(sqlite3 "$DB_NAME" ".tables")
+  if [[ "$tables" == *"users"* && "$tables" == *"sites"* && "$tables" == *"system_settings"* ]]; then
+    echo "✅ Таблицы users, sites, system_settings созданы"
+    # Добавляем команды для автоинкремента
+    echo "🔧 Устанавливаем начальные значения автоинкремента..."
+    sqlite3 "$DB_NAME" <<EOF
 INSERT INTO sqlite_sequence (name, seq) VALUES ('users', 41);
 INSERT INTO sqlite_sequence (name, seq) VALUES ('sites', 76);
 INSERT INTO sqlite_sequence (name, seq) VALUES ('system_settings', 1);
 EOF
-  if [ $? -eq 0 ]; then
-    echo "✅ Начальные значения автоинкремента установлены"
-    # Проверяем содержимое sqlite_sequence
-    echo "🔍 Проверяем таблицу sqlite_sequence..."
-    sqlite3 "$DB_NAME" "SELECT * FROM sqlite_sequence;"
+    if [ $? -eq 0 ]; then
+      echo "✅ Начальные значения автоинкремента установлены"
+      echo "🔍 Проверяем таблицу sqlite_sequence..."
+      sqlite3 "$DB_NAME" "SELECT * FROM sqlite_sequence;"
+    else
+      echo "❌ Ошибка при установке начальных значений автоинкремента"
+      cat "$ADAPTED_DUMP"
+      exit 1
+    fi
   else
-    echo "❌ Ошибка при установке начальных значений автоинкремента"
-    cat "$ADAPTED_DUMP" # Выводим содержимое для отладки
+    echo "❌ Таблицы не созданы или созданы некорректно: $tables"
+    cat "$ADAPTED_DUMP"
     exit 1
   fi
 else
   echo "❌ Ошибка при импорте дампа"
-  cat "$ADAPTED_DUMP" # Выводим содержимое для отладки
+  cat "$ADAPTED_DUMP"
   exit 1
 fi
 
