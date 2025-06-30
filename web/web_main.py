@@ -62,6 +62,9 @@ from shared.logger_setup import logger
 from datetime import datetime
 import traceback
 from typing import Optional
+from fastapi import FastAPI, Request, status
+from fastapi.responses import HTMLResponse
+from shared.logger_setup import logger
 
 app = FastAPI(title="Website Monitor Admin Panel")
 templates = Jinja2Templates(directory="web/templates")
@@ -131,39 +134,57 @@ async def shutdown_event():
     logger.info("Shutting Down Web Application...")
 
 
+# @app.exception_handler(404)
+# async def not_found_exception_handler(request: Request, exc: Exception):
+#     error_info = ErrorInfo(exc, request)
+#     logger.error(
+#         "Ошибка %s: %s\nМестоположение: %s\nTraceback: %s",
+#         error_info.exception_name,
+#         error_info.exception_message,
+#         error_info.error_location.replace("\n", " | "),
+#         error_info.traceback_snippet,
+#     )
+#     return templates.TemplateResponse(
+#         "error.html",
+#         {"request": request, "status_code": 404, "detail": "Страница не найдена."},
+#         status_code=404,
+#     )
 @app.exception_handler(404)
 async def not_found_exception_handler(request: Request, exc: Exception):
     error_info = ErrorInfo(exc, request)
-    logger.error(
-        "Ошибка %s: %s\nМестоположение: %s\nTraceback: %s",
-        error_info.exception_name,
-        error_info.exception_message,
-        error_info.error_location.replace("\n", " | "),
-        error_info.traceback_snippet,
-    )
+    logger.error(f"404 Error: {error_info._format_traceback()}")
     return templates.TemplateResponse(
         "error.html",
-        {"request": request, "status_code": 404, "detail": "Страница не найдена."},
-        status_code=404,
+        {"request": request, "detail": str(exc), "status_code": 404},
+        status_code=status.HTTP_404_NOT_FOUND,
     )
 
 
+# @app.exception_handler(500)
+# async def internal_error_exception_handler(request: Request, exc: Exception):
+#     error_info = ErrorInfo(exc, request)
+#     logger.error(
+#         "Ошибка %s: %s\nМестоположение: %s\nTraceback: %s",
+#         error_info.exception_name,
+#         error_info.exception_message,
+#         error_info.error_location.replace("\n", " | "),
+#         error_info.traceback_snippet,
+#     )
+#     return templates.TemplateResponse(
+#         "error.html",
+#         {
+#             "request": request,
+#             "status_code": 500,
+#             "detail": "Внутренняя ошибка сервера.",
+#         },
+#         status_code=500,
+#     )
 @app.exception_handler(500)
 async def internal_error_exception_handler(request: Request, exc: Exception):
     error_info = ErrorInfo(exc, request)
-    logger.error(
-        "Ошибка %s: %s\nМестоположение: %s\nTraceback: %s",
-        error_info.exception_name,
-        error_info.exception_message,
-        error_info.error_location.replace("\n", " | "),
-        error_info.traceback_snippet,
-    )
+    logger.error(f"500 Error: {error_info._format_traceback()}")
     return templates.TemplateResponse(
         "error.html",
-        {
-            "request": request,
-            "status_code": 500,
-            "detail": "Внутренняя ошибка сервера.",
-        },
-        status_code=500,
+        {"request": request, "detail": "Внутренняя ошибка сервера", "status_code": 500},
+        status_code=status.HTTP_500_INTERNAL_SERVER,
     )

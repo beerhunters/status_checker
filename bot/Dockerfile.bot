@@ -1,26 +1,39 @@
 # bot/Dockerfile.bot
+FROM python:3.10-slim AS builder
+
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Обновление apt и установка минимально необходимых пакетов
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    redis-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Установка pip и зависимостей
+COPY bot/requirements.bot.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --retries 5 --timeout 30 -r requirements.bot.txt
+
 FROM python:3.10-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-ENV PYTHONPATH=/app
+# Копирование зависимостей из builder
+COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    redis-tools \
-    libgdbm-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY bot/requirements.bot.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.bot.txt
-
-COPY shared/ /app/shared/
-COPY bot/ /app/bot/
-
+# Создание пользователя
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app/celery_data && \
     chown -R appuser:appuser /app
-
 USER appuser
+
+# Копирование кода приложения
+COPY shared/ /app/shared/
+COPY bot/ /app/bot/
 
 CMD ["python", "-m", "bot.bot_main"]

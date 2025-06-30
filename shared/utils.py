@@ -7,6 +7,24 @@ from shared.config import settings
 from redis.exceptions import ConnectionError, TimeoutError
 
 
+import aiohttp
+from shared.config import settings
+
+
+async def send_notification_async(user_id: int, message: str) -> None:
+    url = f"https://api.telegram.org/bot{settings.bot_token}/sendMessage"
+    payload = {"chat_id": user_id, "text": message, "parse_mode": "HTML"}
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=payload, timeout=5) as response:
+                if response.status != 200:
+                    logger.error(
+                        f"Failed to send notification to {user_id}: {await response.text()}"
+                    )
+        except Exception as e:
+            logger.error(f"Error sending notification to {user_id}: {str(e)}")
+
+
 def check_website_sync(
     url: str, retries: int = 3, delay: int = 2, timeout: int = 5
 ) -> bool:
