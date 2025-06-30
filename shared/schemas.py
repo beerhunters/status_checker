@@ -1,3 +1,4 @@
+# shared/schemas.py
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
@@ -13,5 +14,8 @@ class SiteBase(BaseModel):
 
 
 class Site(SiteBase):
+    id: int
+    user_id: int
+
     class Config:
-        from_attributes = True
+        from_attributes = True  # Updated from orm_mode
