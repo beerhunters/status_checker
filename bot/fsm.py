@@ -1,3 +1,4 @@
+# Без изменений, сохранена структура для совместимости
 from aiogram.fsm.state import State, StatesGroup
 
 

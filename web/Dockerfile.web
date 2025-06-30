@@ -1,4 +1,4 @@
-# web/Dockerfile.web
+# Изменения: Добавлено создание директории /app/data/ с правами для webuser
 FROM python:3.10-slim AS builder
 
 WORKDIR /app
@@ -7,10 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Установка зависимостей
 COPY web/requirements.web.txt .
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    redis-tools \
-    && rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --retries 5 --timeout 30 -r requirements.web.txt
 
 FROM python:3.10-slim
@@ -24,14 +21,14 @@ ENV PYTHONPATH=/app \
 COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Создание пользователя
+# Создание пользователя и директории для БД
 RUN useradd -m -u 1001 webuser && \
+    mkdir -p /app/data && \
     chown -R webuser:webuser /app
 USER webuser
 
 # Копирование кода приложения
 COPY shared/ /app/shared/
 COPY web/ /app/web/
-COPY bot/ /app/bot/
 
 CMD ["uvicorn", "web.web_main:app", "--host", "0.0.0.0", "--port", "8000"]

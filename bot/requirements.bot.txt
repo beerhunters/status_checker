@@ -1,11 +1,9 @@
+# Изменения: Убраны Celery и Redis, добавлен APScheduler
 aiogram>=3.7.0
 sqlalchemy>=2.0
-psycopg2-binary
-asyncpg
+aiosqlite
 requests
-eventlet
 python-dotenv
 pydantic-settings
 aiohttp
-asgiref>=3.7.2
-celery[redis,asyncio]==5.5.2
+apscheduler>=3.10.4

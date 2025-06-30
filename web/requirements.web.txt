@@ -1,9 +1,8 @@
-# web/requirements.web.txt
+# Изменения: Убраны Celery и Redis, добавлен aiosqlite
 fastapi
 uvicorn[standard]
 sqlalchemy>=2.0
-asyncpg
-psycopg2-binary
+aiosqlite
 python-dotenv
 pydantic-settings
 jinja2
@@ -12,5 +11,4 @@ passlib[bcrypt]
 aiohttp
 python-multipart
 requests
-celery>=5.5.2
-redis>=5.0.1
+apscheduler>=3.10.4
